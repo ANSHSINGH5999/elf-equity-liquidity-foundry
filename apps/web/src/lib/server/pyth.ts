@@ -44,6 +44,22 @@ export const PYTH_FEED_LABELS: Record<PythFeedKind, string> = {
   ondo: "Ondo tokenized stock",
 };
 
+/**
+ * Every state the Price Oracle panel can be in, precise enough that the UI
+ * never guesses. Determined by live-verified Hermes behavior (2026-09-18):
+ * a fully missing Authorization header is the only case that returns 401;
+ * a malformed/garbage key AND a valid key with no grant for the feed both
+ * return 403, distinguished only by response body text ("invalid API key"
+ * vs "no grant accepts this feed") — status code alone cannot tell them
+ * apart, so `classifyHermesError` below always parses the body too.
+ */
+export type PythUnavailableReason =
+  | "not_configured" // PYTH_API_KEY isn't set — never attempted a request
+  | "unauthenticated" // key missing/malformed — Hermes rejected the credential itself
+  | "entitlement_restricted" // key is valid but has no grant for this specific feed
+  | "rate_limited" // 429
+  | "unavailable"; // feed doesn't exist, network error, or an unclassified failure
+
 export interface PythFeedComparisonEntry {
   kind: PythFeedKind;
   label: string;
@@ -51,8 +67,18 @@ export interface PythFeedComparisonEntry {
   feedId: string;
   priceUsd: number | null;
   publishTime: string | null;
-  /** Set only when priceUsd is null — distinguishes "never tried" from "tried and failed" so the UI never claims a wrong reason. */
-  unavailableReason: "not_configured" | "fetch_failed" | null;
+  /** Set only when priceUsd is null — distinguishes "never tried" from the exact way it failed, so the UI never claims a wrong reason. */
+  unavailableReason: PythUnavailableReason | null;
+}
+
+/** Parses a Hermes error response into a precise reason — see PythUnavailableReason. Never assumes; only classifies what the response actually said. */
+export function classifyHermesError(status: number, body: string): PythUnavailableReason {
+  if (status === 401) return "unauthenticated";
+  if (status === 429) return "rate_limited";
+  if (status === 403) {
+    return /invalid api key/i.test(body) ? "unauthenticated" : "entitlement_restricted";
+  }
+  return "unavailable";
 }
 
 interface DiscoveredFeed {
@@ -116,28 +142,32 @@ export async function getPythPriceComparison(symbol: string): Promise<PythFeedCo
   if (feeds.length === 0) return [];
 
   const apiKey = process.env.PYTH_API_KEY;
-  if (!apiKey) {
-    return feeds.map((f) => ({ kind: f.kind, label: PYTH_FEED_LABELS[f.kind], feedSymbol: f.feedSymbol, feedId: f.feedId, priceUsd: null, publishTime: null, unavailableReason: "not_configured" }));
-  }
+  const withReason = (reason: PythUnavailableReason): PythFeedComparisonEntry[] =>
+    feeds.map((f) => ({ kind: f.kind, label: PYTH_FEED_LABELS[f.kind], feedSymbol: f.feedSymbol, feedId: f.feedId, priceUsd: null, publishTime: null, unavailableReason: reason }));
 
+  if (!apiKey) return withReason("not_configured");
+
+  const startedAt = Date.now();
   try {
     const idsQuery = feeds.map((f) => `ids[]=${f.feedId}`).join("&");
     const res = await fetch(`${HERMES_URL}/v2/updates/price/latest?${idsQuery}&parsed=true`, {
       headers: { Authorization: `Bearer ${apiKey}` },
       cache: "no-store",
     });
+
     if (!res.ok) {
-      // A configured key that Hermes rejects (bad token, or a real one
-      // without an entitlement/plan for these feeds — both come back as
-      // 401/403) is a materially different state from never having tried:
-      // the former needs the Pyth account fixed, not just a key pasted in.
-      return feeds.map((f) => ({ kind: f.kind, label: PYTH_FEED_LABELS[f.kind], feedSymbol: f.feedSymbol, feedId: f.feedId, priceUsd: null, publishTime: null, unavailableReason: "fetch_failed" }));
+      const bodyText = await res.text().catch(() => "");
+      const reason = classifyHermesError(res.status, bodyText);
+      // Safe diagnostics only — never the key, never the Authorization header, never the raw body (which can echo the feed ID but not the credential).
+      logPythDiagnostic({ endpoint: HERMES_URL, feedCount: feeds.length, feedIds: feeds.map((f) => f.feedId), status: res.status, reason, latencyMs: Date.now() - startedAt });
+      return withReason(reason);
     }
 
     const data = (await res.json()) as {
       parsed?: { id: string; price?: { price: string; expo: number; publish_time: number } }[];
     };
     const byId = new Map((data.parsed ?? []).map((p) => [p.id, p.price]));
+    logPythDiagnostic({ endpoint: HERMES_URL, feedCount: feeds.length, feedIds: feeds.map((f) => f.feedId), status: res.status, reason: null, latencyMs: Date.now() - startedAt });
 
     return feeds.map((f) => {
       const parsed = byId.get(f.feedId);
@@ -150,12 +180,21 @@ export async function getPythPriceComparison(symbol: string): Promise<PythFeedCo
         feedId: f.feedId,
         priceUsd: valid ? priceUsd : null,
         publishTime: valid && parsed ? new Date(parsed.publish_time * 1000).toISOString() : null,
-        unavailableReason: valid ? null : "fetch_failed",
+        // A 200 response that simply omits a feed (Hermes returns only the
+        // feeds it has data for) means that specific feed is unavailable —
+        // not an entitlement problem, since the request as a whole succeeded.
+        unavailableReason: valid ? null : "unavailable",
       };
     });
   } catch {
-    return feeds.map((f) => ({ kind: f.kind, label: PYTH_FEED_LABELS[f.kind], feedSymbol: f.feedSymbol, feedId: f.feedId, priceUsd: null, publishTime: null, unavailableReason: "fetch_failed" }));
+    logPythDiagnostic({ endpoint: HERMES_URL, feedCount: feeds.length, feedIds: feeds.map((f) => f.feedId), status: null, reason: "unavailable", latencyMs: Date.now() - startedAt });
+    return withReason("unavailable");
   }
+}
+
+/** Structured, secret-free diagnostic log — never the key, never the Authorization header, never a raw response body. */
+function logPythDiagnostic(entry: { endpoint: string; feedCount: number; feedIds: string[]; status: number | null; reason: PythUnavailableReason | null; latencyMs: number }): void {
+  console.log(JSON.stringify({ scope: "pyth_price_comparison", ...entry }));
 }
 
 const HERMES_URL = process.env.PYTH_HERMES_URL ?? "https://hermes.pyth.network";

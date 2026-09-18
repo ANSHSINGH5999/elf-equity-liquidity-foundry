@@ -72,12 +72,17 @@ export function TradePanel({ poolAddress, onTradeConfirmed }: { poolAddress: str
 
   useEffect(() => {
     const amount = Number(amountUsd);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      setQuote(null);
-      return;
-    }
     let cancelled = false;
+    // The invalid-amount reset lives inside the same deferred timer as the
+    // fetch path (not a synchronous setState at the top of the effect body)
+    // so every state update this effect makes happens from a callback, per
+    // react-hooks/set-state-in-effect.
     const timer = setTimeout(() => {
+      if (cancelled) return;
+      if (!Number.isFinite(amount) || amount <= 0) {
+        setQuote(null);
+        return;
+      }
       apiFetch<QuoteResponse>(`/api/dbc/${poolAddress}/quote?amountUsd=${amount}&side=${side}`)
         .then((res) => !cancelled && setQuote(res))
         .catch(() => !cancelled && setQuote(null));

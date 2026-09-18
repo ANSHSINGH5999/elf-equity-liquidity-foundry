@@ -336,6 +336,14 @@ export interface DataFreshness {
 /** Three ways Pyth prices the same underlying company — see apps/web/src/lib/server/pyth.ts. */
 export type PythFeedKind = "equity" | "xstock" | "ondo";
 
+/**
+ * Precise reason a feed has no live price — see `classifyHermesError` in
+ * apps/web/src/lib/server/pyth.ts, which live-verified (2026-09-18) that
+ * Hermes returns 403 for both a malformed key and a valid key lacking a
+ * feed's entitlement, distinguished only by response body text.
+ */
+export type PythUnavailableReason = "not_configured" | "unauthenticated" | "entitlement_restricted" | "rate_limited" | "unavailable";
+
 export interface PriceOracleFeed {
   kind: PythFeedKind;
   label: string;
@@ -344,7 +352,7 @@ export interface PriceOracleFeed {
   /** null when the feed exists but PYTH_API_KEY isn't configured, or the pull failed. */
   priceUsd: number | null;
   publishTime: string | null;
-  unavailableReason: "not_configured" | "fetch_failed" | null;
+  unavailableReason: PythUnavailableReason | null;
 }
 
 export interface MarketOverview {
