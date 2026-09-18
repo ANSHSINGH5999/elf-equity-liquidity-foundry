@@ -344,6 +344,7 @@ export interface PriceOracleFeed {
   /** null when the feed exists but PYTH_API_KEY isn't configured, or the pull failed. */
   priceUsd: number | null;
   publishTime: string | null;
+  unavailableReason: "not_configured" | "fetch_failed" | null;
 }
 
 export interface MarketOverview {

@@ -51,6 +51,8 @@ export interface PythFeedComparisonEntry {
   feedId: string;
   priceUsd: number | null;
   publishTime: string | null;
+  /** Set only when priceUsd is null — distinguishes "never tried" from "tried and failed" so the UI never claims a wrong reason. */
+  unavailableReason: "not_configured" | "fetch_failed" | null;
 }
 
 interface DiscoveredFeed {
@@ -115,7 +117,7 @@ export async function getPythPriceComparison(symbol: string): Promise<PythFeedCo
 
   const apiKey = process.env.PYTH_API_KEY;
   if (!apiKey) {
-    return feeds.map((f) => ({ kind: f.kind, label: PYTH_FEED_LABELS[f.kind], feedSymbol: f.feedSymbol, feedId: f.feedId, priceUsd: null, publishTime: null }));
+    return feeds.map((f) => ({ kind: f.kind, label: PYTH_FEED_LABELS[f.kind], feedSymbol: f.feedSymbol, feedId: f.feedId, priceUsd: null, publishTime: null, unavailableReason: "not_configured" }));
   }
 
   try {
@@ -125,7 +127,11 @@ export async function getPythPriceComparison(symbol: string): Promise<PythFeedCo
       cache: "no-store",
     });
     if (!res.ok) {
-      return feeds.map((f) => ({ kind: f.kind, label: PYTH_FEED_LABELS[f.kind], feedSymbol: f.feedSymbol, feedId: f.feedId, priceUsd: null, publishTime: null }));
+      // A configured key that Hermes rejects (bad token, or a real one
+      // without an entitlement/plan for these feeds — both come back as
+      // 401/403) is a materially different state from never having tried:
+      // the former needs the Pyth account fixed, not just a key pasted in.
+      return feeds.map((f) => ({ kind: f.kind, label: PYTH_FEED_LABELS[f.kind], feedSymbol: f.feedSymbol, feedId: f.feedId, priceUsd: null, publishTime: null, unavailableReason: "fetch_failed" }));
     }
 
     const data = (await res.json()) as {
@@ -144,10 +150,11 @@ export async function getPythPriceComparison(symbol: string): Promise<PythFeedCo
         feedId: f.feedId,
         priceUsd: valid ? priceUsd : null,
         publishTime: valid && parsed ? new Date(parsed.publish_time * 1000).toISOString() : null,
+        unavailableReason: valid ? null : "fetch_failed",
       };
     });
   } catch {
-    return feeds.map((f) => ({ kind: f.kind, label: PYTH_FEED_LABELS[f.kind], feedSymbol: f.feedSymbol, feedId: f.feedId, priceUsd: null, publishTime: null }));
+    return feeds.map((f) => ({ kind: f.kind, label: PYTH_FEED_LABELS[f.kind], feedSymbol: f.feedSymbol, feedId: f.feedId, priceUsd: null, publishTime: null, unavailableReason: "fetch_failed" }));
   }
 }
 

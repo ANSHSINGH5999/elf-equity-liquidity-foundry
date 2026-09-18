@@ -32,14 +32,20 @@ export function PriceOraclePanel({ onChainPriceUsd, feeds }: { onChainPriceUsd: 
               sublabel={feed.feedSymbol}
               value={feed.priceUsd}
               deltaFrom={onChainPriceUsd}
-              unconfigured={feed.priceUsd === null}
+              unavailableReason={feed.unavailableReason}
             />
           ))
         )}
 
-        {feeds.length > 0 && feeds.every((f) => f.priceUsd === null) && (
+        {feeds.length > 0 && feeds.every((f) => f.unavailableReason === "not_configured") && (
           <p className="text-xs text-muted-foreground">
             Feeds found but not pulled — set <span className="font-tabular">PYTH_API_KEY</span> to see live prices.
+          </p>
+        )}
+        {feeds.length > 0 && feeds.some((f) => f.unavailableReason === "fetch_failed") && (
+          <p className="text-xs text-muted-foreground">
+            A key is configured but Hermes rejected the request — check the Pyth account this key belongs to (plan,
+            entitlements, or the key itself).
           </p>
         )}
       </CardContent>
@@ -53,14 +59,14 @@ function Row({
   value,
   deltaFrom,
   highlight = false,
-  unconfigured = false,
+  unavailableReason = null,
 }: {
   label: string;
   sublabel: string;
   value: number | null;
   deltaFrom?: number;
   highlight?: boolean;
-  unconfigured?: boolean;
+  unavailableReason?: "not_configured" | "fetch_failed" | null;
 }) {
   const deltaPct = value !== null && deltaFrom ? ((value - deltaFrom) / deltaFrom) * 100 : null;
 
@@ -72,7 +78,9 @@ function Row({
       </div>
       <div className="shrink-0 text-right">
         {value === null ? (
-          <Badge variant={unconfigured ? "outline" : "neutral"}>{unconfigured ? "no key" : "unavailable"}</Badge>
+          <Badge variant={unavailableReason === "not_configured" ? "outline" : "warning"}>
+            {unavailableReason === "not_configured" ? "no key" : "rejected"}
+          </Badge>
         ) : (
           <>
             <p className="font-tabular text-sm text-foreground">{formatUsd(value)}</p>
