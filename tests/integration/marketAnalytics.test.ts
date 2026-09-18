@@ -6,6 +6,7 @@ import {
   getMarketVolatility,
   getPriceHistory,
   getTradeStats,
+  getTopTraderVolumeShare,
   getTraderStats,
   getVolumeStats,
   resolveMarket,
@@ -229,5 +230,22 @@ describe("marketAnalytics (real Postgres, seeded fixtures)", () => {
     if (!dbAvailable) return console.warn("Skipping: local Postgres unavailable.");
     const freshness = await getDataFreshness("NoCursorPoolAddress1111111111111111111111");
     expect(freshness.status).toBe("unavailable");
+  });
+  it("computes the largest wallet's share of volume DB-side (fixtures: A = 100 + 60, B = 220, total 380)", async () => {
+    if (!dbAvailable) return console.warn("Skipping: local Postgres unavailable.");
+    const share = await getTopTraderVolumeShare(marketId, "ALL");
+    expect(share).not.toBeNull();
+    expect(share!).toBeCloseTo(220 / 380, 5);
+  });
+
+  it("reports null (not 0) for volume concentration when a market has no trades at all", async () => {
+    if (!dbAvailable) return console.warn("Skipping: local Postgres unavailable.");
+    expect(await getTopTraderVolumeShare("genuinely-nonexistent-market", "ALL")).toBeNull();
+  });
+
+  it("never returns a share above 1", async () => {
+    if (!dbAvailable) return console.warn("Skipping: local Postgres unavailable.");
+    const share = await getTopTraderVolumeShare(marketId, "ALL");
+    expect(share!).toBeLessThanOrEqual(1);
   });
 });

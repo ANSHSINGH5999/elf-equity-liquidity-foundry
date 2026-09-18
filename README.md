@@ -10,16 +10,20 @@ flow: **Discover an asset → Market Profile → Curve Compiler → Simulation
 → Config Review → Wallet Approval → Meteora DBC Config/Pool → Live
 Market → Trade → Market Analytics → Graduation Monitor** — and, once
 live, anyone can buy or sell directly against the deployed curve from
-the market page itself, with the on-chain price checked against Pyth in
-real time.
+the market page itself, with the on-chain price compared against Pyth
+feeds wherever the configured API key is entitled to them (otherwise the
+page says exactly why it cannot).
 
 Built for the Solana "Stocklana" hackathon, targeting the Meteora DBC,
 Pyth, and PreStocks bounties: a real, live integration into
 **PreStocks** (both the asset-selection step and a standalone `/assets`
 discovery page), a real, in-app **Meteora
 DBC swap widget** (not just a launch tool), and a **multi-source Pyth
-price oracle** comparing the live on-chain price against the regulated
-equity feed, the xStock feed, and the Ondo feed. Also includes a
+price oracle** built to compare the live on-chain price against the
+regulated equity feed, the xStock feed, and the Ondo feed — live numbers
+require a Pyth key entitled to those feeds; the key used in development is
+authenticated but not entitled, so the panel reports
+`Restricted — Pyth entitlement required` instead of showing a price. Also includes a
 feature-flagged, real-but-currently-unstable integration into
 **Tessera** — see [Known limitations](#known-limitations).
 
@@ -115,7 +119,8 @@ See [.env.example](.env.example) for the full, current list. Summary:
 
 ```bash
 pnpm dev          # apps/web on http://localhost:3000
-pnpm test         # vitest: market-engine, simulation, integration
+pnpm test         # vitest: engine, simulation, security, UI-state, integration
+pnpm lint         # eslint (0 errors; 2 pre-existing unused-var warnings)
 pnpm typecheck    # tsc --noEmit across every package
 pnpm build        # next build (also the production build check)
 ```
@@ -138,7 +143,23 @@ pnpm build        # next build (also the production build check)
   run it against a pre-funded devnet wallet instead of requesting an
   airdrop.
 
-Run everything: `pnpm test`.
+- **Analytics, risk, trading and analyst logic** (`tests/market-engine`,
+  `tests/ui`): pure-function tests for the graduation checklist, the risk
+  indicators (including boundary behaviour), trade-preview math, the
+  wallet/trade state machine (Quote → Signing → Submitted → Confirmed /
+  Failed, wallet-disconnected, rejected, expired, insufficient balance) and
+  the market analyst across a matrix of data states, including its
+  advice/prediction guardrail against adversarial phrasings.
+- **Security** (`tests/security`): input validation for the public swap
+  route, real-Postgres tests that API responses never carry keypair secrets,
+  and a static scan of every API route and client component
+  (`api-secret-hygiene`).
+- **Pyth** (`tests/integration/pyth.test.ts`): every Hermes error
+  classification, with `fetch` mocked inside the test only.
+
+Run everything: `pnpm test` (currently 25 files / 419 tests). Real-Postgres
+tests need `docker compose up -d`; they skip gracefully if the database is
+unreachable.
 
 ## 9. Deployment
 
@@ -198,6 +219,7 @@ read-only analytics.
   instability first observed 2026-09-15. Still not force-enabled in the
   demo path; the Asset Discovery page shows an honest "temporarily
   unavailable" state for it instead.
+- **No live validation yet.** The new market UI (trading terminal, transaction history, graduation monitor, issuer dashboard, market analyst) has **not yet been visually validated against a live market**: no pool exists until the devnet wallet is funded. It is verified by type checks, lint, a production build, state-logic and API tests, and runtime 404/400 smoke tests — not by eye with real data.
 - **The Price Oracle panel needs `PYTH_API_KEY`** to show live numbers.
   Hermes's feed-discovery endpoint (`/v2/price_feeds`) is open, but its
   price-pull endpoint now requires a Bearer token — confirmed live
@@ -208,6 +230,11 @@ read-only analytics.
   permanent, differently-shaped pool that the DBC swap instruction this
   widget builds no longer applies to; the market page shows a graduated
   state instead of a broken trade form.
+- **The market analyst is rule-based, not an LLM.** No AI provider or API key
+  is configured; the provider interface and guardrail are in place for one.
+- **No live market cap** is shown — ELF does not read circulating supply on-chain.
+- **The trading UI supports pre-migration DBC pools only**; a graduated pool
+  shows a notice (its liquidity lives in DAMM v2).
 - **Rate limiting is in-memory**, fine for a single instance, not for a
   multi-instance production deployment (see docs/security.md).
 - **Clawpump (agent-assisted launch) was evaluated and not implemented**
@@ -243,8 +270,20 @@ read-only analytics.
       unavailable, wallet rejection, insufficient funds, blockhash
       expiry, not-found)
 - [x] README is complete
-- [x] Tests pass (`pnpm test` — 25/25 unit+simulation; integration test
-      passes/gracefully skips depending on devnet faucet availability)
+- [x] Tests pass (`pnpm test` — 25 files / 419 tests; the devnet
+      integration test passes or gracefully skips depending on faucet availability)
+- [x] Trading terminal: live quote, execution price, price impact,
+      wallet balances, Quote → Sign → Submitted → Confirmed / Failed states
+- [x] Transaction explorer: indexed trades with signature, pool, network and
+      Solana Explorer links (only confirmed, indexed transactions are listed)
+- [x] Graduation monitor built on the single real DBC trigger; volume and
+      market cap shown as not-applicable, never as invented gates
+- [x] Issuer risk dashboard (`/markets/[id]/analytics`): NORMAL / WATCH /
+      DATA UNAVAILABLE with documented formulas
+- [x] Market analyst: **deterministic and rule-based (not an LLM)**, source-traced,
+      with an advice/prediction guardrail; a provider interface exists for a future LLM
+- [ ] Live devnet trade evidence — **not yet captured** (wallet unfunded); see
+      [docs/demo-evidence.md](docs/demo-evidence.md) for what is and is not verified
 - [x] Production build passes (`pnpm build`)
 - [ ] Deployment — not deployed to a public URL as part of this session;
       see [Deployment](#9-deployment) for the exact steps

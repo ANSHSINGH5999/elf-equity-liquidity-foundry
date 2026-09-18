@@ -173,6 +173,71 @@ guessed value:
   never recorded a price for that market — the UI should show "no
   historical data yet," not an empty chart pretending to be complete.
 
+## Final-sprint calculations
+
+Everything below is pure code in `packages/market-engine` (no I/O), fed by
+data the platform already computes, and covered by tests in `tests/market-engine`
+and `tests/ui`. Nothing here is computed in the browser except formatting.
+
+### Issuer risk indicators (`computeRiskIndicators`, `risk.ts`)
+
+Statuses are only **NORMAL**, **WATCH**, **DATA_UNAVAILABLE**. There is
+deliberately no LOW/MEDIUM/HIGH composite "risk score": no defensible way to
+aggregate these into one number exists, so none is invented. The WATCH
+cutoffs below are **ELF-defined analytical parameters** (`RISK_THRESHOLDS`),
+not Meteora protocol values and not industry standards; every indicator also
+exposes its raw measured value. A status is decided on the *unrounded* value;
+only the displayed number is rounded.
+
+| Indicator | Value shown | WATCH when | DATA_UNAVAILABLE when |
+|---|---|---|---|
+| Liquidity | `liquidityUsd ÷ targetLiquidityUsd × 100` (issuer-declared target from `MarketProfile`) | below 50% | target missing or ≤ 0 |
+| Price deviation | `abs(priceUsd − referencePriceUsd) ÷ referencePriceUsd × 100` | above 10% | reference ≤ 0 / missing. Note states whether the reference is live Pyth or the static issuer-declared number |
+| Oracle status | count of Pyth feeds with a live price | never (NORMAL if ≥ 1 live) | no live feed; the note says exactly why (`Restricted — Pyth entitlement required`, not configured, rejected key, rate-limited, unavailable, or no public feed exists) |
+| Trading activity | indexed trades in the last 24h | 0 trades while the indexer is live | indexer has no cursor for the pool |
+| Volume concentration | largest single wallet's volume ÷ total 24h volume × 100 (one DB-side grouped query, `getTopTraderVolumeShare`) | above 50% (a simple majority) | no volume in the window |
+| Large-trade exposure | largest 24h trade ÷ current liquidity × 100 | above 10% | no trades, or liquidity ≤ 0 |
+| Indexer health | reuses the existing freshness rule (lag ≤ 300s = live) | delayed | no cursor |
+
+### Graduation checklist (`buildGraduationChecklist`, `graduation.ts`)
+
+Meteora DBC graduation has **one** on-chain trigger: the pool's quote reserve
+reaching the config's `migrationQuoteThreshold`. The checklist therefore has
+one gating condition plus the separate, real "migration executed" step.
+"Volume requirement" and "Market-cap requirement" are rendered as
+`not_applicable` (with the reason) — they are never invented as extra gates,
+and live market cap is reported "Data unavailable" because ELF does not read
+circulating supply on-chain. "Migration executed" comes from real pool state
+(`isMigrated`), never inferred from reaching 100%.
+
+### Trade preview (`trade.ts`, `swap.ts`)
+
+- `computeSwapAmountIn` converts what the user typed into the raw `amountIn`
+  the program expects. The quote route and the swap route share it, so a
+  preview cannot drift from the transaction later built. Built from a BigInt
+  string (a plain `new BN(number)` throws above 2^53).
+- `computeExecutionMetrics`: execution price = quote-leg USD ÷ base tokens.
+  Price impact (fees included) = how much worse than spot the fill is, positive
+  on both sides (a buy paying above spot, a sell receiving below spot).
+- `minimumReceived` = expected output × (1 − slippage bps ÷ 10,000) — the same
+  floor the swap route sets as `minimumAmountOut`.
+- `checkSufficientBalance` never treats an unreadable balance as zero.
+- A trade is **Confirmed** only after `confirmTransaction` returns with no
+  on-chain `err`. (`confirmTransaction` *resolves* — it does not throw — for a
+  transaction that landed but failed, so the error field is checked
+  explicitly and surfaces as Failed with the real signature.)
+
+### Market analyst (`analyst.ts`)
+
+A deterministic, rule-based reading of the same data as the issuer dashboard.
+It is **not** a language model and says so in the UI (provider label
+`elf-rule-based-v1`). Every sentence is built from a real value, every claim
+lists its data source, missing data is named ("Could not be measured"), and the
+exact inputs are shown under "Data used". A `MarketAnalystProvider` interface
+allows an LLM provider later; **every** provider's output is checked by
+`findAdviceViolations` (advice, buy/sell/hold ratings, price predictions,
+guarantees) and flagged output is discarded — never shown.
+
 ## Known limitations
 
 - The Market Quality Score breakdown itself doesn't yet consume indexed

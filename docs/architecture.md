@@ -170,3 +170,16 @@ the former still powers the original `/pools/[poolAddress]` dashboard,
 the latter powers the new `/markets/[marketId]` detail page and is now
 the link target from `/markets`. Consolidating them is a recommended,
 not-yet-done follow-up (see `docs/production-readiness.md`).
+
+## Final-sprint feature map
+
+| Feature | Route / UI | API | Pure logic (`market-engine`) | Data reused |
+|---|---|---|---|---|
+| Trading terminal | `/markets/[id]` (Trade panel) | `GET .../quote`, `POST .../swap` | `trade.ts`, `swap.ts#computeSwapAmountIn` | Meteora `swapQuote2`, existing swap builder |
+| Transaction explorer | `/markets/[id]` (Transaction history, click a row) | `GET /api/markets/:id/trades` (adds pool/token) | — | `Trade` rows written by the existing indexer |
+| Graduation monitor | `/markets/[id]` | `GET /api/markets/:id` (adds `graduationChecklist`) | `graduation.ts#buildGraduationChecklist` | `computeGraduationStatus`, pool `isMigrated` |
+| Issuer risk dashboard | `/markets/[id]/analytics` | `GET /api/markets/:id/risk` | `risk.ts` | `getMarketOverview`, `getTradeStats`, `getTraderStats`, freshness; one new aggregate |
+| Market analyst | `/markets/[id]/analytics` | `POST /api/markets/:id/analyze` | `analyst.ts` (+ guardrail) | the issuer dashboard payload |
+
+No Prisma schema change was needed. The market page itself is the trading
+surface, so no duplicate `/trade` or `/transactions` route was created.

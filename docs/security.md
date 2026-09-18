@@ -130,6 +130,47 @@ confirmed, rather than trusting the client's history or generating a
 second on-chain account for the same intent. See `docs/architecture.md`
 for the full `LaunchStage` lifecycle.
 
+## Final-sprint additions (trading terminal, explorer, risk, analyst)
+
+- **Swap route (`POST /api/dbc/:pool/swap`)** keeps every existing control:
+  rate limit, zod validation, network/cluster assertion, and
+  simulate-before-sign (`prepareForWalletSignature`). Server-side it never
+  signs anything; the connected wallet signs client-side. The request now
+  accepts an exact `amountTokens` for sells only, with strict validation
+  (exactly one of `amountUsd`/`amountTokens`; tokens only for sells; finite,
+  positive, bounded) — see `tests/security/swap-validation.test.ts`.
+- **A trade is never shown as confirmed on submission.** The client waits for
+  `confirmed` commitment and treats an on-chain `err` as Failed
+  (`TradeOnChainFailure`), keeping the real signature for the explorer link.
+- **No secret reaches an API response.** New routes build responses from
+  explicit fields (never a `Launch` row). `tests/security/api-secret-hygiene.test.ts`
+  statically scans **every** API route and client component: no wholesale
+  `Launch` serialization, no keypair-secret column names outside the four
+  deployment routes, no `PYTH_API_KEY` in any route, no server-only env var read
+  in a client component. `tests/security/trades-route.test.ts` proves the values
+  against real Postgres with seeded fake secrets.
+- **Pyth key** is read only in the `server-only` module `pyth.ts`; verified
+  absent from the built client bundle. Entitlement failures are classified
+  (`not_configured / unauthenticated / entitlement_restricted / rate_limited /
+  unavailable`) and shown as exactly that — no feed is substituted or faked.
+- **Analyst endpoint (`POST /api/markets/:id/analyze`)** takes no body (the
+  server reads the market itself, so a caller cannot feed it invented numbers),
+  is rate-limited to 10/min, makes no external call, and its output passes an
+  advice/prediction guardrail. It holds no API key today; a future LLM provider
+  must keep its key server-side.
+- **New read routes are rate-limited** (`/risk` 30/min, `/analyze` 10/min,
+  and the previously unlimited `/quote` now 60/min, since the terminal polls it).
+- **New SQL** (`getTopTraderVolumeShare`) uses a Prisma tagged template —
+  parameterised, not string-built.
+- Balances are read client-side via the public RPC only; an unreadable balance
+  is `null`/"unavailable", never `0`.
+
+Known gap carried forward (not introduced here): the deployment wizard's
+`signAndSend` in `review-step.tsx` still calls `confirmTransaction` without
+checking the returned `err`. Preflight simulation catches nearly all failures
+first, so this is low-likelihood, but it should get the same fix the trading
+terminal received.
+
 ## Known limitations (see also README)
 
 - The in-memory rate limiter is still the biggest scaling gap for a

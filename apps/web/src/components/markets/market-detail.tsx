@@ -3,13 +3,16 @@
 import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { PriceChart } from "@/components/charts/price-chart";
 import { LiquidityChart } from "@/components/charts/liquidity-chart";
 import { MarketQualityCard } from "@/components/markets/market-quality-card";
 import { DataFreshnessBadge } from "@/components/markets/data-freshness-badge";
 import { TradePanel } from "@/components/markets/trade-panel";
 import { PriceOraclePanel } from "@/components/markets/price-oracle-panel";
+import { TransactionsTable, type IndexedTrade } from "@/components/markets/transactions-table";
+import { GraduationMonitor } from "@/components/markets/graduation-monitor";
+import Link from "next/link";
+import { summarizeOracleFeeds } from "@elf/market-engine";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { formatUsd, truncateAddress } from "@/lib/utils";
 import type {
@@ -26,15 +29,11 @@ interface OverviewDto extends Omit<MarketOverview, "marketQualityScore" | "fresh
   freshness: DataFreshness;
 }
 
-interface RecentTrade {
-  signature: string;
-  trader: string;
-  side: "buy" | "sell";
-  tokenAmount: number;
-  quoteAmount: number;
-  priceUsd: number;
-  timestamp: string;
-  source: "INDEXED";
+interface TradesResponse {
+  poolAddress: string | null;
+  tokenSymbol: string;
+  quoteToken: string;
+  trades: IndexedTrade[];
 }
 
 function formatChange(change: MetricOrInsufficient): { text: string; positive: boolean | null } {
@@ -55,7 +54,7 @@ export function MarketDetail({ marketId }: { marketId: string }) {
   const [overview, setOverview] = useState<OverviewDto | null>(null);
   const [priceHistory, setPriceHistory] = useState<{ timestamp: string; priceUsd: number }[]>([]);
   const [liquidityHistory, setLiquidityHistory] = useState<{ timestamp: string; liquidityUsd: number }[]>([]);
-  const [trades, setTrades] = useState<RecentTrade[]>([]);
+  const [tradesData, setTradesData] = useState<TradesResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
 
@@ -74,11 +73,11 @@ export function MarketDetail({ marketId }: { marketId: string }) {
       const [price, liquidity, tradesRes] = await Promise.all([
         apiFetch<{ points: { timestamp: string; priceUsd: number }[] }>(`/api/markets/${marketId}/price?period=24H`),
         apiFetch<{ points: { timestamp: string; liquidityUsd: number }[] }>(`/api/markets/${marketId}/liquidity?period=24H`),
-        apiFetch<{ trades: RecentTrade[] }>(`/api/markets/${marketId}/trades?limit=15`),
+        apiFetch<TradesResponse>(`/api/markets/${marketId}/trades?limit=15`),
       ]);
       setPriceHistory(price.points);
       setLiquidityHistory(liquidity.points);
-      setTrades(tradesRes.trades);
+      setTradesData(tradesRes);
     } catch {
       // Charts/activity are supplementary — a failure here shouldn't blank the header stats above.
     }
@@ -119,6 +118,7 @@ export function MarketDetail({ marketId }: { marketId: string }) {
   const o = overview!;
   const priceChange = formatChange(o.priceChange24h);
   const graduation: GraduationStatus = o.graduation;
+  const oracle = summarizeOracleFeeds(o.priceOracle.map((f) => ({ priceUsd: f.priceUsd, unavailableReason: f.unavailableReason })));
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6">
@@ -136,17 +136,23 @@ export function MarketDetail({ marketId }: { marketId: string }) {
             </span>
           </div>
         </div>
-        <DataFreshnessBadge freshness={o.freshness} />
+        <div className="flex items-center gap-3">
+          <Link href={`/markets/${marketId}/analytics`} className="text-xs font-medium text-accent-strong hover:underline">
+            Issuer analytics →
+          </Link>
+          <DataFreshnessBadge freshness={o.freshness} />
+        </div>
       </div>
 
       {error && <p className="mt-4 text-sm text-negative">{error}</p>}
 
-      <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
         <Stat label="Liquidity" value={formatUsd(o.liquidityUsd.value, { compact: true })} source={o.liquidityUsd.source} />
         <Stat label="24H Volume" value={formatUsd(o.volume24hUsd.value, { compact: true })} source={o.volume24hUsd.source} />
         <Stat label="Trades (24H)" value={o.tradeCount24h.toLocaleString("en-US")} source="INDEXED" />
         <Stat label="Unique traders (24H)" value={o.uniqueTraders24h.toLocaleString("en-US")} source="INDEXED" />
         <Stat label="Graduation" value={`${graduation.percentageComplete.toFixed(1)}%`} source="ON_CHAIN" />
+        <Stat label="Oracle (Pyth)" value={oracle.headline} source="ON_CHAIN" />
       </div>
 
       <div className="mt-8 grid gap-4 lg:grid-cols-3">
@@ -195,63 +201,32 @@ export function MarketDetail({ marketId }: { marketId: string }) {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Graduation monitor</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-baseline justify-between">
-                <span className="font-tabular text-xl text-foreground">
-                  {formatUsd(graduation.quoteReserveUsd, { compact: true })} / {formatUsd(graduation.migrationThresholdUsd, { compact: true })}
-                </span>
-                <span className="font-tabular text-sm text-muted-foreground">{graduation.percentageComplete.toFixed(1)}%</span>
-              </div>
-              <Progress value={graduation.percentageComplete} className="mt-3" />
-              <p className="mt-2 text-xs capitalize text-muted-foreground">Readiness: {graduation.estimatedReadiness}</p>
-            </CardContent>
-          </Card>
+          <GraduationMonitor
+            graduation={graduation}
+            checklist={o.graduationChecklist}
+            status={o.status}
+            volume24hUsd={o.volume24hUsd.value}
+          />
 
           <Card>
             <CardHeader>
-              <CardTitle>Recent activity</CardTitle>
-              <span className="text-[11px] uppercase tracking-wide text-muted-foreground">Indexed on-chain data</span>
+              <CardTitle>Transaction history</CardTitle>
+              <span className="text-[11px] uppercase tracking-wide text-muted-foreground">Indexed on-chain data — click a row for detail</span>
             </CardHeader>
             <CardContent>
-              {trades.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No indexed trades yet for this market.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
-                        <th className="px-2 py-2">Side</th>
-                        <th className="px-2 py-2">Amount</th>
-                        <th className="px-2 py-2">Price</th>
-                        <th className="px-2 py-2">Trader</th>
-                        <th className="px-2 py-2">Time</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {trades.map((t) => (
-                        <tr key={t.signature} className="border-t border-border">
-                          <td className="px-2 py-2 capitalize text-muted-foreground">{t.side}</td>
-                          <td className="px-2 py-2 font-tabular">{formatUsd(t.tokenAmount * t.priceUsd, { compact: true })}</td>
-                          <td className="px-2 py-2 font-tabular">{formatUsd(t.priceUsd)}</td>
-                          <td className="px-2 py-2 font-tabular text-muted-foreground">{truncateAddress(t.trader)}</td>
-                          <td className="px-2 py-2 text-muted-foreground">{new Date(t.timestamp).toLocaleTimeString()}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              <TransactionsTable
+                trades={tradesData?.trades ?? []}
+                poolAddress={tradesData?.poolAddress ?? o.poolAddress}
+                tokenSymbol={tradesData?.tokenSymbol ?? ""}
+                quoteToken={tradesData?.quoteToken ?? ""}
+              />
             </CardContent>
           </Card>
         </div>
 
         <div className="space-y-4">
           {o.poolAddress && (o.status === "live" || o.status === "near_graduation") && (
-            <TradePanel poolAddress={o.poolAddress} onTradeConfirmed={load} />
+            <TradePanel poolAddress={o.poolAddress} tokenSymbol={tradesData?.tokenSymbol || undefined} onTradeConfirmed={load} />
           )}
           {o.poolAddress && o.status === "graduated" && (
             <Card>

@@ -3,6 +3,7 @@ import BN from "bn.js";
 import { dbcSwapRequestSchema } from "@elf/shared";
 import {
   buildSwapTransaction,
+  computeSwapAmountIn,
   getLivePoolState,
   getOnchainSwapQuote,
   getQuoteUsdPrice,
@@ -51,12 +52,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ poo
     const quoteUsdPrice = await getQuoteUsdPrice(quoteToken);
     const swapBaseForQuote = parsed.data.side === "sell";
 
-    const amountIn = swapBaseForQuote
-      ? new BN(Math.round((parsed.data.amountUsd / (state.priceInQuote * quoteUsdPrice)) * 10 ** state.tokenBaseDecimal))
-      : new BN(Math.round((parsed.data.amountUsd / quoteUsdPrice) * 10 ** state.tokenQuoteDecimal));
+    const amountIn = computeSwapAmountIn({
+      side: parsed.data.side,
+      amountUsd: parsed.data.amountUsd,
+      amountTokens: parsed.data.amountTokens,
+      priceInQuote: state.priceInQuote,
+      quoteUsdPrice,
+      tokenBaseDecimal: state.tokenBaseDecimal,
+      tokenQuoteDecimal: state.tokenQuoteDecimal,
+    });
 
     if (amountIn.lten(0)) {
-      return apiError("validation_error", "amountUsd is too small to produce a non-zero trade size.", 400);
+      return apiError("validation_error", "The amount is too small to produce a non-zero trade size.", 400);
     }
 
     const quote = await getOnchainSwapQuote(connection, poolAddress, amountIn, swapBaseForQuote);

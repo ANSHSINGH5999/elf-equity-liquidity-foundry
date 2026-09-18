@@ -121,13 +121,25 @@ export const dbcPoolRequestSchema = z
  * transaction naming someone else's pubkey as owner is harmless: it still
  * requires that wallet's real signature to ever execute.
  */
-export const dbcSwapRequestSchema = z.object({
-  poolAddress: publicKeySchema,
-  payerPublicKey: publicKeySchema,
-  side: z.enum(["buy", "sell"]),
-  amountUsd: z.number().positive().max(1_000_000),
-  slippageBps: z.number().int().min(1).max(5_000).default(100),
-});
+export const dbcSwapRequestSchema = z
+  .object({
+    poolAddress: publicKeySchema,
+    payerPublicKey: publicKeySchema,
+    side: z.enum(["buy", "sell"]),
+    /** USD-denominated input (either side). Exactly one of amountUsd / amountTokens must be sent. */
+    amountUsd: z.number().positive().max(1_000_000).optional(),
+    /** Exact base-token input — sells only, so a user selling N tokens sells exactly N. */
+    amountTokens: z.number().positive().finite().optional(),
+    slippageBps: z.number().int().min(1).max(5_000).default(100),
+  })
+  .refine((d) => (d.amountUsd !== undefined) !== (d.amountTokens !== undefined), {
+    message: "Provide exactly one of amountUsd or amountTokens.",
+    path: ["amountUsd"],
+  })
+  .refine((d) => d.amountTokens === undefined || d.side === "sell", {
+    message: "amountTokens is only valid for sells; a buy is denominated in the quote token.",
+    path: ["amountTokens"],
+  });
 
 export type CreateAssetInput = z.infer<typeof createAssetSchema>;
 export type MarketProfileInput = z.infer<typeof marketProfileSchema>;

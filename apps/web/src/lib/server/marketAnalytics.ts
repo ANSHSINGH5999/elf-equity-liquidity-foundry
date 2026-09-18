@@ -1,10 +1,18 @@
 import "server-only";
 import { prisma } from "@elf/db";
-import { computeAbsoluteChange, computePercentChange, computeVolatility, explainMarketQualityScore } from "@elf/market-engine";
+import {
+  buildGraduationChecklist,
+  computeAbsoluteChange,
+  computeRiskIndicators,
+  computePercentChange,
+  computeVolatility,
+  explainMarketQualityScore,
+} from "@elf/market-engine";
 import type {
   AnalyticsPeriod,
   DataFreshness,
   DataSource,
+  IssuerDashboard,
   LiquidityHistoryResult,
   MarketOverview,
   MetricOrInsufficient,
@@ -325,11 +333,81 @@ export async function getMarketOverview(marketId: string): Promise<MarketOvervie
     priceChange24h: computePercentChange(poolAnalytics.priceUsd, earliestPrice24h),
     liquidityChange24h: computePercentChange(poolAnalytics.liquidityUsd, earliestLiquidity24h),
     graduation: poolAnalytics.graduation,
+    graduationChecklist: buildGraduationChecklist({
+      graduation: poolAnalytics.graduation,
+      migrated: poolAnalytics.status === "graduated",
+    }),
     marketQualityScore: explainMarketQualityScore(poolAnalytics.marketQualityScore, periodLabel("24H")),
     referencePriceUsd: poolAnalytics.referencePriceUsd,
     referencePriceSource: poolAnalytics.referencePriceSource,
     referencePriceFeedSymbol: poolAnalytics.referencePriceFeedSymbol,
     priceOracle: poolAnalytics.priceOracle,
     freshness,
+  };
+}
+
+/**
+ * Share (0–1) of a period's traded USD volume that came from the single
+ * largest wallet, computed DB-side in one grouped query (same convention as
+ * getTradeAggregatesBySide: trade USD value = token_amount * price_usd).
+ * Returns null when there was no volume — "no concentration" and "cannot
+ * measure concentration" are different statements.
+ */
+export async function getTopTraderVolumeShare(marketId: string, period: AnalyticsPeriod): Promise<number | null> {
+  const since = periodToSince(period) ?? new Date(0);
+  const rows = await prisma.$queryRaw<{ top_volume: number; total_volume: number }[]>`
+    WITH per_trader AS (
+      SELECT trader, SUM(token_amount * price_usd)::float AS v
+      FROM trades
+      WHERE market_id = ${marketId} AND timestamp >= ${since}
+      GROUP BY trader
+    )
+    SELECT COALESCE(MAX(v), 0)::float AS top_volume, COALESCE(SUM(v), 0)::float AS total_volume
+    FROM per_trader
+  `;
+  const row = rows[0];
+  if (!row || row.total_volume <= 0) return null;
+  return Math.min(1, row.top_volume / row.total_volume);
+}
+
+/**
+ * Issuer dashboard payload: the existing MarketOverview plus all-time trade
+ * counts and the risk indicators derived from it. Reuses getMarketOverview
+ * and the existing trade/trader aggregates — the only new query is
+ * getTopTraderVolumeShare. Risk math itself lives in
+ * `@elf/market-engine` (computeRiskIndicators).
+ */
+export async function getIssuerDashboard(marketId: string): Promise<IssuerDashboard | null> {
+  const launch = await resolveMarket(marketId);
+  if (!launch?.poolAddress) return null;
+
+  const [overview, tradeStatsAll, traderStatsAll, tradeStats24h, topShare] = await Promise.all([
+    getMarketOverview(marketId),
+    getTradeStats(marketId, "ALL"),
+    getTraderStats(marketId, "ALL"),
+    getTradeStats(marketId, "24H"),
+    getTopTraderVolumeShare(marketId, "24H"),
+  ]);
+  if (!overview) return null;
+
+  const indicators = computeRiskIndicators({
+    liquidityUsd: overview.liquidityUsd.value,
+    targetLiquidityUsd: launch.marketProfile.targetLiquidityUsd,
+    priceUsd: overview.priceUsd.value,
+    referencePriceUsd: overview.referencePriceUsd,
+    referenceSource: overview.referencePriceSource,
+    oracleFeeds: overview.priceOracle.map((f) => ({ priceUsd: f.priceUsd, unavailableReason: f.unavailableReason })),
+    tradeCount24h: overview.tradeCount24h,
+    indexerStatus: overview.freshness.status,
+    topTraderVolumeShare: topShare,
+    largestTradeUsd: tradeStats24h.totalTrades > 0 ? tradeStats24h.largestTradeUsd : null,
+  });
+
+  return {
+    overview,
+    totalTrades: tradeStatsAll.totalTrades,
+    uniqueTradersAllTime: traderStatsAll.uniqueTraders,
+    targetLiquidityUsd: launch.marketProfile.targetLiquidityUsd,
+    indicators,
   };
 }

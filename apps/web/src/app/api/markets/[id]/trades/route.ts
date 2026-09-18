@@ -22,6 +22,15 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const [trades, traderStats] = await Promise.all([getRecentTrades(id, limit), getTraderStats(id, period)]);
 
     return NextResponse.json({
+      // Pool/token identity is the same for every trade in this market — sent
+      // once at the root rather than duplicated per row. Real values from the
+      // Launch record, never guessed: a trade row only exists here because
+      // the indexer decoded it from a real confirmed on-chain event
+      // (packages/indexer/src/indexPool.ts), so every trade this endpoint
+      // returns is, by construction, already confirmed — never pending/failed.
+      poolAddress: launch.poolAddress,
+      tokenSymbol: launch.asset.symbol,
+      quoteToken: launch.marketProfile.quoteToken,
       trades: trades.map((t) => ({
         signature: t.signature,
         trader: t.trader,
@@ -30,6 +39,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         quoteAmount: t.quoteAmount,
         priceUsd: t.priceUsd,
         timestamp: t.timestamp.toISOString(),
+        status: "confirmed" as const,
         source: "INDEXED" as const,
       })),
       traderStats,

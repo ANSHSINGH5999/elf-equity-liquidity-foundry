@@ -180,6 +180,22 @@ export interface GraduationStatus {
   estimatedReadiness: "not_started" | "early" | "mid" | "near" | "ready";
 }
 
+/**
+ * `not_applicable` is a first-class state (not a missing one): Meteora DBC
+ * graduation is triggered by exactly one on-chain condition — quote reserve
+ * reaching `migrationQuoteThreshold` — so "volume" and "market cap" are
+ * reported as not-applicable rather than invented as extra gates.
+ */
+export type GraduationConditionState = "satisfied" | "unsatisfied" | "not_applicable" | "unavailable";
+
+export interface GraduationCondition {
+  id: "quote_reserve_threshold" | "volume_requirement" | "market_cap_requirement" | "migration_executed";
+  label: string;
+  state: GraduationConditionState;
+  /** Static explanatory sentence — never contains a live number; the UI formats numbers from `GraduationStatus` itself. */
+  detail: string;
+}
+
 export interface PoolMetrics {
   poolAddress: string;
   priceUsd: number;
@@ -372,6 +388,7 @@ export interface MarketOverview {
   priceChange24h: MetricOrInsufficient;
   liquidityChange24h: MetricOrInsufficient;
   graduation: GraduationStatus;
+  graduationChecklist: GraduationCondition[];
   marketQualityScore: MarketQualityScoreResult;
   referencePriceUsd: number;
   /** "pyth" only when a live Hermes feed matched the asset's ticker; otherwise the issuer-declared value. */
@@ -379,6 +396,82 @@ export interface MarketOverview {
   referencePriceFeedSymbol: string | null;
   priceOracle: PriceOracleFeed[];
   freshness: DataFreshness;
+}
+
+/**
+ * Issuer risk indicators (Feature E). Statuses are deliberately limited to
+ * three: there is no LOW/MEDIUM/HIGH composite "risk score" because no
+ * defensible aggregate formula exists. Every indicator carries the formula
+ * that produced it (`formula`) so the number on screen is auditable.
+ */
+export type RiskStatus = "NORMAL" | "WATCH" | "DATA_UNAVAILABLE";
+
+export interface RiskIndicator {
+  id:
+    | "liquidity"
+    | "price_deviation"
+    | "oracle"
+    | "trading_activity"
+    | "volume_concentration"
+    | "large_trades"
+    | "indexer_health";
+  label: string;
+  status: RiskStatus;
+  /** The measured value behind the status, or null when it could not be measured. */
+  value: number | null;
+  unit: "pct" | "count" | null;
+  /** How `value` and `status` were derived — shown to the issuer, kept in sync with the tests. */
+  formula: string;
+  /** Extra context (e.g. the exact Pyth restriction reason); null when there is nothing to add. */
+  note: string | null;
+}
+
+export interface IssuerDashboard {
+  overview: MarketOverview;
+  totalTrades: number;
+  uniqueTradersAllTime: number;
+  targetLiquidityUsd: number;
+  indicators: RiskIndicator[];
+}
+
+/**
+ * Market analyst (Feature D). The analysis is a descriptive reading of real
+ * ELF data — never advice and never a forecast. Every claim is traceable:
+ * `dataUsed` lists the exact values the analysis read, `dataSources` says
+ * which platform sources were actually available, and `unavailableData`
+ * names what could not be measured instead of guessing.
+ */
+export type AnalystSourceId = "dbc" | "indexer" | "pyth" | "market_config";
+
+export interface AnalysisSection {
+  id: "overview" | "liquidity" | "trading_activity" | "oracle" | "graduation";
+  heading: string;
+  lines: string[];
+}
+
+export interface AnalysisObservation {
+  text: string;
+  sources: AnalystSourceId[];
+}
+
+export interface AnalysisDataSource {
+  id: AnalystSourceId;
+  label: string;
+  available: boolean;
+  detail: string;
+}
+
+export interface MarketAnalysis {
+  /** `rule_based` = deterministic ELF logic over live data (no LLM). `llm` is reserved for a future provider. */
+  provider: { id: string; kind: "rule_based" | "llm" };
+  sections: AnalysisSection[];
+  observations: AnalysisObservation[];
+  dataSources: AnalysisDataSource[];
+  /** Things that could not be measured — always includes live market cap, which ELF does not read on-chain. */
+  unavailableData: string[];
+  /** The exact input values the analysis read, so any number in the prose can be checked. */
+  dataUsed: Record<string, string | number | boolean | null>;
+  disclaimer: string;
 }
 
 export const DEFAULT_OBJECTIVE_WEIGHTS: Record<RiskProfile, CurveObjectiveWeights> = {

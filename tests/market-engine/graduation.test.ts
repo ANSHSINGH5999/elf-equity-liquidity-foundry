@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeGraduationStatus, classifyRegime } from "../../packages/market-engine/src/index.js";
+import { buildGraduationChecklist, computeGraduationStatus, classifyRegime } from "../../packages/market-engine/src/index.js";
 
 describe("computeGraduationStatus", () => {
   it("computes the exact percentage shown in the graduation monitor", () => {
@@ -84,5 +84,57 @@ describe("classifyRegime", () => {
         volume24hUsd: 20_000,
       }),
     ).toBe("healthy");
+  });
+});
+
+describe("buildGraduationChecklist", () => {
+  const byId = (list: ReturnType<typeof buildGraduationChecklist>, id: string) => list.find((c) => c.id === id)!;
+
+  it("marks the single real gate unsatisfied below the threshold", () => {
+    const list = buildGraduationChecklist({ graduation: computeGraduationStatus(100_000, 250_000), migrated: false });
+    expect(byId(list, "quote_reserve_threshold").state).toBe("unsatisfied");
+    expect(byId(list, "migration_executed").state).toBe("unsatisfied");
+  });
+
+  it("marks the reserve gate satisfied at/above the threshold, independent of whether migration has run", () => {
+    const list = buildGraduationChecklist({ graduation: computeGraduationStatus(250_000, 250_000), migrated: false });
+    expect(byId(list, "quote_reserve_threshold").state).toBe("satisfied");
+    // 100% reserve is eligibility, not migration — a pool can sit here until someone triggers migrate.
+    expect(byId(list, "migration_executed").state).toBe("unsatisfied");
+  });
+
+  it("marks migration satisfied only when a real migrated signal is provided", () => {
+    const list = buildGraduationChecklist({ graduation: computeGraduationStatus(250_000, 250_000), migrated: true });
+    expect(byId(list, "migration_executed").state).toBe("satisfied");
+  });
+
+  it("never invents volume or market-cap gates — they are always not_applicable, at any progress level", () => {
+    for (const reserve of [0, 50_000, 249_999, 250_000, 900_000]) {
+      const list = buildGraduationChecklist({ graduation: computeGraduationStatus(reserve, 250_000), migrated: false });
+      expect(byId(list, "volume_requirement").state).toBe("not_applicable");
+      expect(byId(list, "market_cap_requirement").state).toBe("not_applicable");
+    }
+  });
+
+  it("reports the reserve gate as unavailable (not unsatisfied) when the migration threshold is missing/zero", () => {
+    const list = buildGraduationChecklist({ graduation: computeGraduationStatus(1_000, 0), migrated: false });
+    expect(byId(list, "quote_reserve_threshold").state).toBe("unavailable");
+  });
+
+  it("returns exactly the four documented conditions, in a stable order", () => {
+    const list = buildGraduationChecklist({ graduation: computeGraduationStatus(1, 100), migrated: false });
+    expect(list.map((c) => c.id)).toEqual([
+      "quote_reserve_threshold",
+      "volume_requirement",
+      "market_cap_requirement",
+      "migration_executed",
+    ]);
+  });
+
+  it("never embeds a live number in the static detail text (numbers come from GraduationStatus, not from this function)", () => {
+    const list = buildGraduationChecklist({ graduation: computeGraduationStatus(217_000, 250_000), migrated: false });
+    for (const condition of list) {
+      expect(condition.detail).not.toMatch(/217|250|\$\d/);
+    }
   });
 });

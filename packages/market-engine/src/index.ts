@@ -4,3 +4,6 @@ export * from "./graduation";
 export * from "./regime";
 export * from "./presets";
 export * from "./analytics";
+export * from "./risk";
+export * from "./trade";
+export * from "./analyst";
