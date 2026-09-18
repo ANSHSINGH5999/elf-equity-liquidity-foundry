@@ -1,0 +1,18 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+allowBuilds:
+  '@prisma/client': true
+  '@prisma/engines': true
+  prisma: true
+  esbuild: true
+  bufferutil: true
+  utf-8-validate: true
+  bigint-buffer: true
+  '@stellar/stellar-sdk': false
+  blake-hash: false
+  protobufjs: false
+  tiny-secp256k1: false
+  unrs-resolver: false
+  usb: false
+ignoreWorkspaceRootCheck: true

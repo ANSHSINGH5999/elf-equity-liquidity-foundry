@@ -1,0 +1,327 @@
+// ELF — Equity Liquidity Foundry
+// Prisma schema. Postgres. Run migrations with `pnpm db:migrate`.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../packages/db/generated"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AssetType {
+  equity
+  pre_ipo
+  fund
+  other
+}
+
+enum AssetSource {
+  manual
+  prestocks
+  tessera
+}
+
+enum RiskProfile {
+  conservative
+  balanced
+  growth
+}
+
+enum QuoteToken {
+  SOL
+  USDC
+}
+
+enum PoolStatus {
+  not_deployed
+  pending_deployment
+  live
+  near_graduation
+  graduated
+}
+
+enum MarketRegime {
+  discovery
+  healthy
+  mature
+  stressed
+  recovery
+}
+
+/// Deployment-pipeline lifecycle (ELF V1 Phase 3). Distinct from
+/// PoolStatus, which describes the deployed pool's market-health state
+/// after LIVE. A Launch's `stage` only ever moves forward, verified
+/// against real on-chain reads (never a client's self-report) before
+/// advancing past AWAITING_*.
+enum LaunchStage {
+  DRAFT
+  CONFIGURED
+  AWAITING_CONFIG_SIGNATURE
+  CONFIG_CREATED
+  AWAITING_POOL_SIGNATURE
+  POOL_CREATED
+  LIVE
+  GRADUATED
+  CLOSED
+  FAILED
+}
+
+enum TradeSide {
+  buy
+  sell
+}
+
+model Asset {
+  id                String        @id @default(cuid())
+  name              String
+  symbol            String
+  mintAddress       String        @map("mint_address")
+  issuer            String
+  assetType         AssetType     @map("asset_type")
+  referencePriceUsd Float         @map("reference_price_usd")
+  source            AssetSource
+  externalId        String?       @map("external_id")
+  createdAt         DateTime      @default(now()) @map("created_at")
+
+  marketProfiles MarketProfile[]
+  curveConfigs   CurveConfig[]
+  launches       Launch[]
+
+  @@index([mintAddress], name: "idx_assets_mint_address")
+  @@map("assets")
+}
+
+model MarketProfile {
+  id                    String      @id @default(cuid())
+  assetId               String      @map("asset_id")
+  initialLiquidityUsd   Float       @map("initial_liquidity_usd")
+  expectedVolatility    String      @map("expected_volatility")
+  riskProfile           RiskProfile @map("risk_profile")
+  targetLiquidityUsd    Float       @map("target_liquidity_usd")
+  targetGraduationUsd   Float       @map("target_graduation_usd")
+  quoteToken            QuoteToken  @map("quote_token")
+  createdAt             DateTime    @default(now()) @map("created_at")
+
+  asset        Asset         @relation(fields: [assetId], references: [id])
+  curveConfigs CurveConfig[]
+  launches     Launch[]
+
+  @@index([assetId], name: "idx_market_profiles_asset_id")
+  @@map("market_profiles")
+}
+
+model CurveConfig {
+  id                    String      @id @default(cuid())
+  assetId               String      @map("asset_id")
+  marketProfileId       String      @map("market_profile_id")
+  riskProfile           RiskProfile @map("risk_profile")
+  label                 String
+  rationale             String
+  initialMarketCapUsd   Float       @map("initial_market_cap_usd")
+  migrationMarketCapUsd Float       @map("migration_market_cap_usd")
+  tokenSupply           Float       @map("token_supply")
+  tokenBaseDecimals     Int         @map("token_base_decimals")
+  feeSchedule           Json        @map("fee_schedule")
+  migration             Json
+  liquidityDistribution Json        @map("liquidity_distribution")
+  score                 Json
+  isRecommended         Boolean     @default(false) @map("is_recommended")
+  createdAt             DateTime    @default(now()) @map("created_at")
+
+  asset          Asset           @relation(fields: [assetId], references: [id])
+  marketProfile  MarketProfile   @relation(fields: [marketProfileId], references: [id])
+  simulationRuns SimulationRun[]
+  launches       Launch[]
+
+  @@index([assetId], name: "idx_curve_configs_asset_id")
+  @@map("curve_configs")
+}
+
+model SimulationRun {
+  id            String   @id @default(cuid())
+  curveConfigId String   @map("curve_config_id")
+  scenarios     Json
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  curveConfig CurveConfig @relation(fields: [curveConfigId], references: [id])
+
+  @@index([curveConfigId], name: "idx_simulation_runs_curve_config_id")
+  @@index([createdAt], name: "idx_simulation_runs_timestamp")
+  @@map("simulation_runs")
+}
+
+/// A Launch IS the "Market" entity conceptually described in the ELF V1
+/// spec — `Launch.id` is used as `marketId` everywhere in the new
+/// Trade/PriceHistory/LiquidityHistory/GraduationEvent tables, rather
+/// than introducing a redundant parallel Market table (decision recorded
+/// in docs/production-readiness.md).
+model Launch {
+  id                 String      @id @default(cuid())
+  assetId            String      @map("asset_id")
+  marketProfileId    String      @map("market_profile_id")
+  curveConfigId      String      @map("curve_config_id")
+  configAddress      String?     @map("config_address")
+  poolAddress        String?     @map("pool_address")
+  baseMint           String?     @map("base_mint")
+  quoteMint          String?     @map("quote_mint")
+  configTxSignature  String?     @map("config_tx_signature")
+  poolTxSignature    String?     @map("pool_tx_signature")
+  status             PoolStatus  @default(not_deployed)
+  stage              LaunchStage @default(DRAFT)
+  /// The base58 wallet public key that first successfully authenticated
+  /// (via a verified wallet signature — see @elf/solana#verifyOwnershipSignature)
+  /// against this deployment. Every subsequent config/pool mutation must
+  /// present a fresh, valid signature from this same wallet. Null only
+  /// during the brief window inside the first successful request before
+  /// the owning transaction commits. See docs/security-remediation.md (HIGH-1).
+  ownerWallet        String?     @map("owner_wallet")
+  /// The `authTimestamp` (ms) of the most recently accepted ownership
+  /// signature for this deployment. A new request must present a strictly
+  /// greater timestamp, so a captured/leaked signature cannot be replayed
+  /// against this same resource after it has already been used once.
+  lastAuthTimestamp  DateTime?   @map("last_auth_timestamp")
+  /// Ephemeral, single-use, base58-encoded. NEVER a user wallet key — see
+  /// docs/security.md. Persisted only long enough to survive a
+  /// browser-refresh mid-deployment; cleared once its account is
+  /// confirmed on-chain.
+  configKeypairSecret   String?  @map("config_keypair_secret")
+  baseMintKeypairSecret String?  @map("base_mint_keypair_secret")
+  createdAt          DateTime    @default(now()) @map("created_at")
+  /// Drives staleness detection for `expireStaleLaunchSecrets` (@elf/db) —
+  /// see docs/security-remediation.md (LOW-5). Prisma sets this
+  /// automatically on every write to this row.
+  updatedAt          DateTime    @updatedAt @map("updated_at")
+
+  asset            Asset              @relation(fields: [assetId], references: [id])
+  marketProfile    MarketProfile      @relation(fields: [marketProfileId], references: [id])
+  curveConfig      CurveConfig        @relation(fields: [curveConfigId], references: [id])
+  pool             Pool?
+  trades           Trade[]
+  priceHistory     PriceHistory[]
+  liquidityHistory LiquidityHistory[]
+  graduationEvents GraduationEvent[]
+
+  @@unique([curveConfigId], map: "uq_launches_curve_config_id")
+  @@index([assetId], name: "idx_launches_asset_id")
+  @@index([poolAddress], name: "idx_launches_pool_address")
+  @@map("launches")
+}
+
+model Pool {
+  id            String   @id @default(cuid())
+  launchId      String   @unique @map("launch_id")
+  poolAddress   String   @unique @map("pool_address")
+  configAddress String   @map("config_address")
+  baseMint      String   @map("base_mint")
+  quoteMint     String   @map("quote_mint")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  launch    Launch           @relation(fields: [launchId], references: [id])
+  snapshots MarketSnapshot[]
+
+  @@index([poolAddress], name: "idx_pools_pool_address")
+  @@map("pools")
+}
+
+model MarketSnapshot {
+  id                     String       @id @default(cuid())
+  poolAddress            String       @map("pool_address")
+  priceUsd                Float        @map("price_usd")
+  volume24hUsd           Float        @map("volume_24h_usd")
+  liquidityUsd           Float        @map("liquidity_usd")
+  quoteReserve           Float        @map("quote_reserve")
+  baseReserve            Float        @map("base_reserve")
+  curveProgress          Float        @map("curve_progress")
+  migrationThresholdUsd  Float        @map("migration_threshold_usd")
+  graduationProgress     Float        @map("graduation_progress")
+  estimatedSlippageBps   Float        @map("estimated_slippage_bps")
+  marketQualityScore     Json         @map("market_quality_score")
+  regime                 MarketRegime
+  status                 PoolStatus
+  timestamp              DateTime     @default(now())
+
+  pool Pool @relation(fields: [poolAddress], references: [poolAddress])
+
+  @@index([poolAddress], name: "idx_market_snapshots_pool_address")
+  @@index([timestamp], name: "idx_market_snapshots_timestamp")
+  @@map("market_snapshots")
+}
+
+/// One row per real on-chain swap, decoded from the DBC program's own
+/// EvtSwap/EvtSwap2 Anchor events (packages/indexer) — never fabricated
+/// or estimated. `marketId` is a Launch.id (see the note on Launch).
+model Trade {
+  id          String    @id @default(cuid())
+  marketId    String    @map("market_id")
+  signature   String    @unique
+  trader      String
+  side        TradeSide
+  tokenAmount Float     @map("token_amount")
+  quoteAmount Float     @map("quote_amount")
+  priceUsd    Float     @map("price_usd")
+  timestamp   DateTime
+
+  market Launch @relation(fields: [marketId], references: [id])
+
+  @@index([marketId, timestamp], name: "idx_trades_market_timestamp")
+  @@map("trades")
+}
+
+/// Derived from indexed Trade rows (source = "indexed_trade") or, before
+/// the indexer has caught up, from a polled analytics read (source =
+/// "snapshot"). `source` must always be checked before treating a row as
+/// a confirmed trade price.
+model PriceHistory {
+  id        String   @id @default(cuid())
+  marketId  String   @map("market_id")
+  priceUsd  Float    @map("price_usd")
+  source    String
+  timestamp DateTime
+
+  market Launch @relation(fields: [marketId], references: [id])
+
+  @@index([marketId, timestamp], name: "idx_price_history_market_timestamp")
+  @@map("price_history")
+}
+
+model LiquidityHistory {
+  id           String   @id @default(cuid())
+  marketId     String   @map("market_id")
+  liquidityUsd Float    @map("liquidity_usd")
+  timestamp    DateTime
+
+  market Launch @relation(fields: [marketId], references: [id])
+
+  @@index([marketId, timestamp], name: "idx_liquidity_history_market_timestamp")
+  @@map("liquidity_history")
+}
+
+/// Decoded from the DBC program's real EvtCurveComplete event — fires
+/// when a pool's curve reaches its migration threshold. `finalState`
+/// stores the event's own base/quote reserve figures; this is NOT the
+/// same as the separate DAMM v2 migration transaction itself.
+model GraduationEvent {
+  id         String   @id @default(cuid())
+  marketId   String   @map("market_id")
+  signature  String   @unique
+  finalState Json     @map("final_state")
+  timestamp  DateTime
+
+  market Launch @relation(fields: [marketId], references: [id])
+
+  @@index([marketId], name: "idx_graduation_events_market_id")
+  @@map("graduation_events")
+}
+
+/// Per-pool watermark so the indexer only fetches new signatures on each
+/// run. One row per indexed pool address.
+model IndexerCursor {
+  poolAddress   String   @id @map("pool_address")
+  lastSignature String?  @map("last_signature")
+  lastIndexedAt DateTime @updatedAt @map("last_indexed_at")
+
+  @@map("indexer_cursors")
+}

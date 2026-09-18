@@ -1,0 +1,30 @@
+{
+  "name": "@elf/indexer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "run-once": "node --experimental-strip-types src/cli.ts"
+  },
+  "dependencies": {
+    "@elf/db": "workspace:*",
+    "@elf/meteora-adapter": "workspace:*",
+    "@elf/shared": "workspace:*",
+    "@elf/solana": "workspace:*",
+    "@solana/web3.js": "^1.98.0",
+    "bn.js": "^5.2.1"
+  },
+  "devDependencies": {
+    "@types/bn.js": "^5.1.6",
+    "@types/node": "^20",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

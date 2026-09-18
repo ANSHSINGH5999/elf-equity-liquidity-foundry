@@ -1,0 +1,33 @@
+{
+  "name": "equity-liquidity-foundry",
+  "private": true,
+  "version": "0.1.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "vitest run",
+    "db:generate": "pnpm --filter @elf/db exec prisma generate",
+    "db:migrate": "pnpm --filter @elf/db exec prisma migrate dev",
+    "db:deploy": "pnpm --filter @elf/db exec prisma migrate deploy",
+    "db:studio": "pnpm --filter @elf/db exec prisma studio"
+  },
+  "devDependencies": {
+    "@solana/web3.js": "^1.98.0",
+    "bn.js": "^5.2.1",
+    "bs58": "^6.0.0",
+    "prisma": "6.19.3",
+    "turbo": "^2.3.3",
+    "tweetnacl": "^1.0.3",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "packageManager": "pnpm@12.4.2",
+  "dependencies": {
+    "@prisma/client": "6.19.3"
+  }
+}

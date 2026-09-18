@@ -1,0 +1,17 @@
+node_modules/
+.pnpm-store/
+dist/
+.next/
+out/
+build/
+coverage/
+.env
+.env.local
+.env.*.local
+.DS_Store
+*.log
+.turbo/
+.vercel/
+.claude/settings.local.json
+prisma/dev.db
+prisma/dev.db-journal

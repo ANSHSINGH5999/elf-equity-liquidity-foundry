@@ -1,0 +1,231 @@
+@import "tailwindcss";
+
+:root {
+  /* Controlled Institutional Dark Foundation */
+  --background: #05070b;
+  --background-subtle: #080b12;
+  --surface: #0c101a;
+  --surface-elevated: #121724;
+  --surface-hover: #181f30;
+  --surface-overlay: rgba(12, 16, 26, 0.85);
+
+  --foreground: #f5f7fa;
+  --muted-foreground: #a7b0c0;
+  --subtle-foreground: #64748b;
+  
+  --border: rgba(255, 255, 255, 0.07);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --border-accent: rgba(201, 162, 39, 0.28);
+
+  /* Primary Technology Accent (Electric Indigo / Violet) */
+  --accent: #6366f1;
+  --accent-foreground: #ffffff;
+  --accent-muted: rgba(99, 102, 241, 0.12);
+  --accent-strong: #818cf8;
+  --accent-violet: #8b5cf6;
+
+  /* Premium Financial Champagne / Gold Accent (used for high-tier moments) */
+  --gold: #c9a227;
+  --gold-light: #f0d58a;
+  --gold-deep: #8f6b18;
+  --gold-muted: rgba(201, 162, 39, 0.12);
+  --gold-border: rgba(240, 213, 138, 0.22);
+
+  /* Trading Semantics */
+  --positive: #22c55e;
+  --positive-muted: rgba(34, 197, 94, 0.12);
+  --negative: #ef4444;
+  --negative-muted: rgba(239, 68, 68, 0.12);
+  --warning: #f59e0b;
+  --warning-muted: rgba(245, 158, 11, 0.12);
+
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+
+  --ease-premium: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 160ms;
+  --duration-base: 300ms;
+  --duration-slow: 600ms;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-surface-hover: var(--surface-hover);
+  --color-foreground: var(--foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-muted: var(--accent-muted);
+  --color-accent-strong: var(--accent-strong);
+  --color-gold: var(--gold);
+  --color-gold-light: var(--gold-light);
+  --color-gold-muted: var(--gold-muted);
+  --color-positive: var(--positive);
+  --color-positive-muted: var(--positive-muted);
+  --color-negative: var(--negative);
+  --color-negative-muted: var(--negative-muted);
+  --color-warning: var(--warning);
+  --color-warning-muted: var(--warning-muted);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-mono-terminal);
+  --font-display: var(--font-display);
+}
+
+* {
+  border-color: var(--border);
+}
+
+html {
+  color-scheme: dark;
+  background-color: var(--background);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Subtle atmospheric grid pattern */
+.bg-grid-pattern {
+  background-size: 40px 40px;
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+}
+
+.font-tabular {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-feature-settings: "tnum" 1;
+}
+
+.font-display {
+  font-family: var(--font-display), Georgia, serif;
+  letter-spacing: -0.018em;
+}
+
+/* Premium Precision Surface System */
+.surface-card {
+  background-color: #0c101a;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.02) inset;
+}
+
+.surface-glass {
+  background-color: rgba(12, 16, 26, 0.72);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 12px 36px -12px rgba(0, 0, 0, 0.7), 0 1px 0 0 rgba(255, 255, 255, 0.05) inset;
+}
+
+.surface-gold-subtle {
+  background: linear-gradient(180deg, rgba(240, 213, 138, 0.04) 0%, rgba(12, 16, 26, 0.95) 100%);
+  border: 1px solid var(--gold-border);
+  box-shadow: 0 8px 30px -10px rgba(201, 162, 39, 0.12);
+}
+
+/* Typography & Accent Gradients */
+.text-gradient-gold {
+  background: linear-gradient(135deg, #f0d58a 0%, #c9a227 50%, #dfb846 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.text-gradient-indigo {
+  background: linear-gradient(135deg, #c7d2fe 0%, #818cf8 50%, #6366f1 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Glow Utilities */
+.glow-gold {
+  box-shadow: 0 0 28px -4px rgba(201, 162, 39, 0.35);
+}
+
+.glow-indigo {
+  box-shadow: 0 0 28px -4px rgba(99, 102, 241, 0.35);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #05070b;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e2538;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2a344d;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Solana Wallet Adapter modal styling for dark aesthetic */
+.wallet-adapter-button {
+  background: linear-gradient(135deg, #1c2133 0%, #121624 100%) !important;
+  color: #f5f7fa !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  font-family: var(--font-sans), system-ui, sans-serif !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  height: 38px !important;
+  border-radius: var(--radius-sm) !important;
+  transition: all var(--duration-fast) var(--ease-premium) !important;
+}
+
+.wallet-adapter-button:not([disabled]):hover {
+  background: linear-gradient(135deg, #252c42 0%, #171d2e 100%) !important;
+  border-color: rgba(255, 255, 255, 0.22) !important;
+  transform: translateY(-1px);
+}
+
+.wallet-adapter-modal-wrapper {
+  background: #0c101a !important;
+  border: 1px solid var(--border-strong) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: 0 25px 60px -12px rgba(0, 0, 0, 0.9) !important;
+}
+
+.wallet-adapter-modal-title {
+  color: var(--foreground) !important;
+  font-family: var(--font-display), Georgia, serif !important;
+}
+
+.wallet-adapter-modal-list li {
+  background: rgba(255, 255, 255, 0.03) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-sm) !important;
+}
+
+.wallet-adapter-modal-list li:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border-color: rgba(255, 255, 255, 0.15) !important;
+}
+
+.wallet-adapter-modal-button-close {
+  background: rgba(255, 255, 255, 0.05) !important;
+}
