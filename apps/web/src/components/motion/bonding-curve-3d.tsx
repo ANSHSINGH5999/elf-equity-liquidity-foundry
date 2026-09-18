@@ -121,18 +121,36 @@ function DynamicCurveModel({ preset = "balanced" }: { preset?: "conservative" | 
   );
 }
 
-export function BondingCurve3D({ preset = "balanced" }: { preset?: "conservative" | "balanced" | "growth" }) {
-  const [mounted, setMounted] = React.useState(false);
-  const [reducedMotion, setReducedMotion] = React.useState(false);
+// React's own documented pattern for a value that only exists once mounted
+// on the client (https://react.dev/reference/react/useSyncExternalStore) —
+// avoids a synchronous setState-in-effect call while producing the exact
+// same `false` (server/initial render) -> `true` (after mount) transition
+// the previous useState+useEffect version did.
+function subscribeNoop() {
+  return () => {};
+}
+function getMountedSnapshot() {
+  return true;
+}
+function getMountedServerSnapshot() {
+  return false;
+}
 
-  React.useEffect(() => {
-    setMounted(true);
-    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setReducedMotion(mediaQuery.matches);
-    const handler = (e: MediaQueryListEvent) => setReducedMotion(e.matches);
-    mediaQuery.addEventListener("change", handler);
-    return () => mediaQuery.removeEventListener("change", handler);
-  }, []);
+function subscribeToReducedMotion(onChange: () => void) {
+  const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+  mediaQuery.addEventListener("change", onChange);
+  return () => mediaQuery.removeEventListener("change", onChange);
+}
+function getReducedMotionSnapshot() {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+function getReducedMotionServerSnapshot() {
+  return false;
+}
+
+export function BondingCurve3D({ preset = "balanced" }: { preset?: "conservative" | "balanced" | "growth" }) {
+  const mounted = React.useSyncExternalStore(subscribeNoop, getMountedSnapshot, getMountedServerSnapshot);
+  const reducedMotion = React.useSyncExternalStore(subscribeToReducedMotion, getReducedMotionSnapshot, getReducedMotionServerSnapshot);
 
   if (!mounted) {
     return (

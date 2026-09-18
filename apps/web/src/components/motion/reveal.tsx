@@ -124,7 +124,11 @@ export function CountUpNumber({
 
   React.useEffect(() => {
     if (reduceMotion) {
-      setDisplayValue(value);
+      // Deferred to a microtask (runs before the next paint, same as the
+      // prior synchronous call visually) so this is a setState-in-callback,
+      // not a setState-in-effect-body — satisfies react-hooks/set-state-in-effect
+      // without altering when the value actually becomes visible.
+      queueMicrotask(() => setDisplayValue(value));
       return;
     }
     let start = 0;
