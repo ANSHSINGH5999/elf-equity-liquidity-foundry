@@ -77,6 +77,23 @@ export const simulateMarketSchema = z.object({
   curveCandidateId: z.string().min(1),
 });
 
+export const SIMULATION_LAB_MAX_PROGRESS_PCT = 95;
+
+/**
+ * Simulation Lab request. The client names a STORED curve config and one of
+ * the engine's own scenarios; it never supplies curve parameters. Only the two
+ * things the engine can genuinely vary are accepted: the assumed position on
+ * the curve, and the side (buy/sell) of each of the four standard trades.
+ */
+export const simulationLabRequestSchema = z
+  .object({
+    curveCandidateId: z.string().min(1).max(64),
+    scenario: z.enum(["normal_demand", "strong_buy_pressure", "strong_sell_pressure", "low_liquidity", "high_volatility", "graduation_approach"]),
+    curveProgressPct: z.number().finite().min(0).max(SIMULATION_LAB_MAX_PROGRESS_PCT).optional(),
+    sides: z.array(z.enum(["buy", "sell"])).length(4).optional(),
+  })
+  .strict();
+
 /**
  * Base58 ed25519 signature: 64 raw bytes. base58-encoding 64 bytes always
  * produces between 64 and 88 characters, so this bound both rejects
@@ -141,10 +158,22 @@ export const dbcSwapRequestSchema = z
     path: ["amountTokens"],
   });
 
+/**
+ * Input to the (read-only) launch-plan route. The simulation is referenced by
+ * id and re-loaded server-side from the row the simulate route wrote — the
+ * client can never supply simulation numbers of its own.
+ */
+export const launchPlanRequestSchema = z.object({
+  curveCandidateId: z.string().min(1).max(64),
+  simulationRunId: z.string().min(1).max(64).optional(),
+});
+
 export type CreateAssetInput = z.infer<typeof createAssetSchema>;
 export type MarketProfileInput = z.infer<typeof marketProfileSchema>;
 export type DesignMarketInput = z.infer<typeof designMarketSchema>;
 export type SimulateMarketInput = z.infer<typeof simulateMarketSchema>;
+export type SimulationLabRequestInput = z.infer<typeof simulationLabRequestSchema>;
 export type DbcConfigRequestInput = z.infer<typeof dbcConfigRequestSchema>;
 export type DbcPoolRequestInput = z.infer<typeof dbcPoolRequestSchema>;
 export type DbcSwapRequestInput = z.infer<typeof dbcSwapRequestSchema>;
+export type LaunchPlanRequestInput = z.infer<typeof launchPlanRequestSchema>;

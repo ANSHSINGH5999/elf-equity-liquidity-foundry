@@ -3,3 +3,5 @@ export * from "./wellKnown";
 export * from "./validation";
 export * from "./network";
 export * from "./ownership";
+export * from "./walletNetwork";
+export * from "./confirmation";

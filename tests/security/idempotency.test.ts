@@ -5,6 +5,7 @@ import bs58 from "bs58";
 import { prisma } from "../../packages/db/src/index.js";
 import { buildOwnershipMessage } from "../../packages/solana/src/index.js";
 import { POST as postConfig } from "../../apps/web/src/app/api/dbc/config/route.js";
+import { startStubRpc, type StubRpc } from "../helpers/stubRpc.js";
 
 /**
  * Regression test for duplicate/replayed deployment *requests* (as
@@ -17,6 +18,10 @@ import { POST as postConfig } from "../../apps/web/src/app/api/dbc/config/route.
  * signature (a new timestamp) — HIGH-1's replay protection means the
  * exact same signature can't just be resent.
  */
+// The config route verifies the cluster (genesis hash) before it does anything else. This test is about idempotency,
+// not the network, so that handshake is answered locally: the guard still runs, and a busy public RPC cannot flake it.
+let stubRpc: StubRpc | null = null;
+const ORIGINAL_RPC = process.env.SOLANA_RPC_URL;
 let dbAvailable = false;
 let assetId = "";
 let marketProfileId = "";
@@ -32,6 +37,8 @@ function signFor(route: string, resourceId: string) {
 }
 
 beforeAll(async () => {
+  stubRpc = await startStubRpc({ genesisOf: "devnet" });
+  process.env.SOLANA_RPC_URL = stubRpc.url;
   try {
     await prisma.$queryRaw`SELECT 1`;
     dbAvailable = true;
@@ -105,6 +112,9 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await stubRpc?.close();
+  if (ORIGINAL_RPC === undefined) delete process.env.SOLANA_RPC_URL;
+  else process.env.SOLANA_RPC_URL = ORIGINAL_RPC;
   if (!dbAvailable) return;
   await prisma.launch.deleteMany({ where: { id: LAUNCH_ID } });
   await prisma.curveConfig.deleteMany({ where: { id: curveConfigId } });

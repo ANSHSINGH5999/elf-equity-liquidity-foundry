@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 
 const STEPS = ["Asset", "Profile", "Configuration", "Simulation", "Deploy"];
 
-export function DesignWizard() {
+export function DesignWizard({ preselectedMint }: { preselectedMint?: string }) {
   const [stepIndex, setStepIndex] = useState(0);
   const [asset, setAsset] = useState<AssetDto | null>(null);
   const [curveConfigs, setCurveConfigs] = useState<CurveConfigDto[] | null>(null);
@@ -26,9 +26,9 @@ export function DesignWizard() {
               className={cn(
                 "flex h-7 w-7 shrink-0 items-center justify-center rounded-full font-tabular text-[11px] font-medium transition-all duration-[var(--duration-base)] ease-[var(--ease-premium)]",
                 i < stepIndex
-                  ? "bg-amber-400/20 border border-amber-400/50 text-gold-light"
+                  ? "bg-[#ffe2b2]/20 border border-[#ffe2b2]/50 text-gold-light"
                   : i === stepIndex
-                    ? "border border-amber-400 bg-[#161208] text-gold-light shadow-[0_0_12px_rgba(201,162,39,0.35)]"
+                    ? "border border-[#ffe2b2]/70 bg-[rgba(255,226,178,0.08)] text-gold-light shadow-[0_0_12px_rgba(255,226,178,0.3)]"
                     : "border border-border-strong text-subtle-foreground bg-surface",
               )}
             >
@@ -45,7 +45,7 @@ export function DesignWizard() {
             {i < STEPS.length - 1 && (
               <div className="h-px flex-1 bg-white/10">
                 <div
-                  className="h-px bg-gradient-to-r from-amber-400 to-indigo-400 transition-all duration-500 ease-[var(--ease-premium)]"
+                  className="h-px bg-gradient-to-r from-[#ffe2b2] to-[#9fe0ff] transition-all duration-500 ease-[var(--ease-premium)]"
                   style={{ width: i < stepIndex ? "100%" : "0%" }}
                 />
               </div>
@@ -56,6 +56,7 @@ export function DesignWizard() {
 
       {stepIndex === 0 && (
         <AssetStep
+          preselectedMint={preselectedMint}
           onComplete={(a) => {
             setAsset(a);
             setStepIndex(1);

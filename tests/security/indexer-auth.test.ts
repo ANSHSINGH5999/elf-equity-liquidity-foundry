@@ -1,5 +1,18 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { POST as runIndexer } from "../../apps/web/src/app/api/indexer/run/route.js";
+
+// These tests check auth and response shape, not the network. RPC points at a closed local port so a rate-limited
+// public endpoint (HTTP 429 retries across real pools) cannot push them past the timeout, and so a test run can
+// never advance the real indexer cursors. The URL keeps "devnet" in it: the cluster is derived from the URL.
+const OFFLINE_RPC = "http://127.0.0.1:9/devnet-offline";
+const ORIGINAL_RPC = process.env.SOLANA_RPC_URL;
+beforeAll(() => {
+  process.env.SOLANA_RPC_URL = OFFLINE_RPC;
+});
+afterAll(() => {
+  if (ORIGINAL_RPC === undefined) delete process.env.SOLANA_RPC_URL;
+  else process.env.SOLANA_RPC_URL = ORIGINAL_RPC;
+});
 
 /**
  * LOW-3 regression test (security remediation): POST /api/indexer/run

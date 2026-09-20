@@ -31,8 +31,8 @@ const SAMPLE_ASSET = {
   referencePriceUsd: 42.5,
 };
 
-export function AssetStep({ onComplete }: { onComplete: (asset: AssetDto) => void }) {
-  const [tab, setTab] = useState("manual");
+export function AssetStep({ onComplete, preselectedMint }: { onComplete: (asset: AssetDto) => void; preselectedMint?: string }) {
+  const [tab, setTab] = useState(preselectedMint ? "prestocks" : "manual");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -186,9 +186,10 @@ export function AssetStep({ onComplete }: { onComplete: (asset: AssetDto) => voi
             )}
             {preStocksAssets && (
               <div className="grid gap-3 sm:grid-cols-2">
-                {preStocksAssets.map((asset) => (
+                {[...preStocksAssets].sort((a, b) => Number(b.mintAddress === preselectedMint) - Number(a.mintAddress === preselectedMint)).map((asset) => (
                   <button
                     key={asset.mintAddress}
+                    aria-current={asset.mintAddress === preselectedMint ? "true" : undefined}
                     disabled={submitting}
                     onClick={() =>
                       createAsset({
@@ -202,7 +203,7 @@ export function AssetStep({ onComplete }: { onComplete: (asset: AssetDto) => voi
                         externalId: asset.externalId,
                       })
                     }
-                    className="rounded-[var(--radius-md)] border border-border-strong bg-surface-elevated p-4 text-left transition-all duration-[var(--duration-fast)] ease-[var(--ease-premium)] hover:-translate-y-px hover:border-accent/50 hover:bg-surface-hover disabled:opacity-50"
+                    className={`rounded-[var(--radius-md)] border bg-surface-elevated p-4 text-left transition-all duration-[var(--duration-fast)] ease-[var(--ease-premium)] hover:-translate-y-px hover:border-accent/50 hover:bg-surface-hover disabled:opacity-50 ${asset.mintAddress === preselectedMint ? "border-accent ring-1 ring-accent/60" : "border-border-strong"}`}
                   >
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium text-foreground">{asset.name}</span>

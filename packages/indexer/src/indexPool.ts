@@ -1,6 +1,6 @@
 import { PublicKey, type Connection } from "@solana/web3.js";
 import { prisma, Prisma } from "@elf/db";
-import { decodeTransactionEvents, getQuoteUsdPrice } from "@elf/meteora-adapter";
+import { decodeTransactionEvents, getQuoteUsdPrice, sqrtPriceToPrice } from "@elf/meteora-adapter";
 import type { QuoteToken } from "@elf/shared";
 import { readBN, readField, readNumber } from "./eventFields";
 
@@ -64,7 +64,9 @@ export async function indexPool(connection: Connection, poolAddress: string): Pr
     const timestamp = decoded.blockTime ? new Date(decoded.blockTime * 1000) : new Date();
 
     for (const event of decoded.events) {
-      if (event.name === "EvtSwap" || event.name === "EvtSwap2" || event.name === "EvtSwap2WithTransferHook") {
+      // A swap emits both EvtSwap (legacy: no included-fee input, no quote reserve) and EvtSwap2 (complete). Index the
+      // complete one only, so a swap is never recorded twice or from partial data.
+      if (event.name === "EvtSwap2" || event.name === "EvtSwap2WithTransferHook") {
         const tradeDirection = readNumber(event.data, "trade_direction", "tradeDirection");
         const swapResult = readField(event.data, "swap_result", "swapResult") as Record<string, unknown>;
         const includedFeeInputAmount = readBN(swapResult, "included_fee_input_amount", "includedFeeInputAmount");
@@ -76,6 +78,10 @@ export async function indexPool(connection: Connection, poolAddress: string): Pr
         const quoteAmount = isSell ? toHuman(outputAmount, quoteDecimals) : toHuman(includedFeeInputAmount, quoteDecimals);
         const priceUsd = tokenAmount > 0 ? (quoteAmount / tokenAmount) * quoteUsdPrice : 0;
         const liquidityUsd = toHuman(quoteReserveAmount, quoteDecimals) * quoteUsdPrice;
+        // The price series is the pool's own price after the trade. `priceUsd` above is what this trade paid (fees and
+        // impact included) and stays on the Trade row; mixing the two made a rising pool read as a 4% drop.
+        const nextSqrtPrice = readBN(swapResult, "next_sqrt_price", "nextSqrtPrice");
+        const spotPriceUsd = sqrtPriceToPrice(nextSqrtPrice, BASE_DECIMALS, quoteDecimals) * quoteUsdPrice;
 
         try {
           await prisma.trade.create({
@@ -93,7 +99,7 @@ export async function indexPool(connection: Connection, poolAddress: string): Pr
           tradesWritten += 1;
 
           await prisma.priceHistory.create({
-            data: { marketId: launch.id, priceUsd, source: "indexed_trade", timestamp },
+            data: { marketId: launch.id, priceUsd: spotPriceUsd, source: "indexed_trade", timestamp },
           });
           await prisma.liquidityHistory.create({
             data: { marketId: launch.id, liquidityUsd, timestamp },

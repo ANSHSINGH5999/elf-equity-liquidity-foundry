@@ -63,7 +63,7 @@ export function InteractiveCurveSimulator() {
         </div>
 
         {/* Preset Selector Tabs */}
-        <div className="flex rounded-lg border border-white/10 bg-[#080b12] p-1">
+        <div className="flex rounded-lg border border-white/10 bg-[rgba(6,12,22,0.55)] p-1">
           {(["conservative", "balanced", "growth"] as PresetKey[]).map((key) => (
             <button
               key={key}
@@ -113,7 +113,7 @@ export function InteractiveCurveSimulator() {
 
           {/* Compiled Telemetry Grid */}
           <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-xl border border-white/5 bg-[#080b12]/80 p-3">
+            <div className="rounded-xl border border-white/5 bg-[rgba(6,12,22,0.5)] p-3">
               <div className="text-[10px] font-medium uppercase tracking-wider text-subtle-foreground">
                 Initial Market Cap
               </div>
@@ -125,7 +125,7 @@ export function InteractiveCurveSimulator() {
               </div>
             </div>
 
-            <div className="rounded-xl border border-white/5 bg-[#080b12]/80 p-3">
+            <div className="rounded-xl border border-white/5 bg-[rgba(6,12,22,0.5)] p-3">
               <div className="text-[10px] font-medium uppercase tracking-wider text-subtle-foreground">
                 DAMM v2 Target
               </div>
@@ -137,11 +137,11 @@ export function InteractiveCurveSimulator() {
               </div>
             </div>
 
-            <div className="rounded-xl border border-white/5 bg-[#080b12]/80 p-3">
+            <div className="rounded-xl border border-white/5 bg-[rgba(6,12,22,0.5)] p-3">
               <div className="text-[10px] font-medium uppercase tracking-wider text-subtle-foreground">
                 Max Dynamic Fee
               </div>
-              <div className="mt-1 font-mono text-base font-semibold text-indigo-300">
+              <div className="mt-1 font-mono text-base font-semibold text-[#bfeaff]">
                 {active.dynamicFeeMax}
               </div>
               <div className="mt-0.5 text-[10px] text-muted-foreground">
@@ -149,7 +149,7 @@ export function InteractiveCurveSimulator() {
               </div>
             </div>
 
-            <div className="rounded-xl border border-white/5 bg-[#080b12]/80 p-3">
+            <div className="rounded-xl border border-white/5 bg-[rgba(6,12,22,0.5)] p-3">
               <div className="text-[10px] font-medium uppercase tracking-wider text-subtle-foreground">
                 Resilience Index
               </div>
@@ -162,7 +162,7 @@ export function InteractiveCurveSimulator() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-white/5 bg-gradient-to-r from-indigo-950/40 to-[#080b12] p-3 text-xs text-muted-foreground">
+          <div className="rounded-xl border border-white/5 bg-gradient-to-r from-[#9fe0ff]/10 to-[rgba(6,12,22,0.55)] p-3 text-xs text-muted-foreground">
             <span className="font-semibold text-foreground">Deterministic Execution: </span>
             Compiled with Meteora Dynamic Bonding Curve SDK without custom AMM risks.
           </div>

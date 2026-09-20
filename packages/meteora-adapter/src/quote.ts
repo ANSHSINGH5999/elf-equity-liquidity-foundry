@@ -1,9 +1,14 @@
 import type { Connection, PublicKey } from "@solana/web3.js";
 import BN from "bn.js";
 import {
+  ActivationType,
   MAX_SQRT_PRICE,
   SwapMode,
   getPriceFromSqrtPrice,
+  getMigrationThresholdPrice,
+  getQuoteReserveFromNextSqrtPrice,
+  type PoolConfig,
+  type VirtualPool,
   type ConfigParameters,
   type SwapQuote2Result,
   type TokenDecimal,
@@ -100,34 +105,64 @@ export function getCurvePositionStartPrice(
   return { startSqrtPrice, startPriceInQuote, sqrtEnd };
 }
 
+/**
+ * Quote reserve (raw quote-token units) the SDK's own curve integral assigns
+ * to a sqrt price. `configParameters` must be the ORIGINAL config (genesis
+ * `sqrtStartPrice`), not a repositioned copy. Graduation happens when this
+ * reaches `migrationQuoteThreshold`.
+ */
+export function getQuoteReserveAtSqrtPrice(configParameters: ConfigParameters, sqrtPrice: BN): BN {
+  return getQuoteReserveFromNextSqrtPrice(sqrtPrice, configParameters as unknown as PoolConfig);
+}
+
 export function simulateAtCurvePosition(
   connection: Connection,
   input: CurvePositionQuoteInput,
 ): CurvePositionQuoteResult {
   const { configParameters, curveProgressFraction, swapBaseForQuote, amountIn, tokenBaseDecimal, tokenQuoteDecimal } = input;
 
-  const { startSqrtPrice, startPriceInQuote, sqrtEnd } = getCurvePositionStartPrice(
+  const { startSqrtPrice, startPriceInQuote } = getCurvePositionStartPrice(
     configParameters,
     curveProgressFraction,
     tokenBaseDecimal,
     tokenQuoteDecimal,
   );
 
-  const client = getDbcClient(connection);
-  const quote = client.pool.getQuoteFromInputAmount({
-    // `migrationSqrtPrice` is passed explicitly (rather than left for the
-    // SDK to derive from `curve` + `migrationQuoteThreshold`) because that
-    // derivation assumes `sqrtStartPrice` is the curve's true genesis
-    // price; once we've repositioned it to simulate a later curve
-    // position, re-deriving from it underflows. `sqrtEnd` is the same
-    // curve-final checkpoint used to compute `startSqrtPrice` above, so
-    // this stays consistent with the interpolation itself.
-    config: { ...configParameters, sqrtStartPrice: startSqrtPrice, migrationSqrtPrice: sqrtEnd },
+  // The ORIGINAL config (genuine genesis sqrtStartPrice) is quoted against a
+  // virtual pool sitting at the scenario's price, exactly as a live pool would
+  // be (the SDK's own `swapQuote2`). Moving `sqrtStartPrice` instead would turn
+  // the scenario price into the curve's price floor, so every sell would
+  // wrongly report "Insufficient Liquidity".
+  const config = {
+    ...configParameters,
+    migrationSqrtPrice: getMigrationThresholdPrice(configParameters.migrationQuoteThreshold, configParameters.sqrtStartPrice, configParameters.curve),
+    poolFees: {
+      ...configParameters.poolFees,
+      dynamicFee: configParameters.poolFees.dynamicFee
+        ? { ...configParameters.poolFees.dynamicFee, initialized: 1 }
+        : { initialized: 0, binStep: 0, variableFeeControl: 0 },
+    },
+  } as unknown as PoolConfig;
+  const zero = new BN(0);
+  const virtualPool = {
+    poolState: {
+      sqrtPrice: startSqrtPrice,
+      baseReserve: zero,
+      quoteReserve: getQuoteReserveAtSqrtPrice(configParameters, startSqrtPrice),
+      activationPoint: zero,
+      volatilityTracker: { lastUpdateTimestamp: zero, sqrtPriceReference: zero, volatilityAccumulator: zero, volatilityReference: zero, padding: [] },
+    },
+  } as unknown as VirtualPool;
+
+  const quote = getDbcClient(connection).pool.swapQuote2({
+    virtualPool,
+    config,
     swapBaseForQuote,
     amountIn,
     swapMode: SwapMode.ExactIn,
+    slippageBps: 0,
     hasReferral: false,
-    currentPoint: input.currentPoint ?? new BN(0),
+    currentPoint: input.currentPoint ?? zero,
     eligibleForFirstSwapWithMinFee: false,
   });
 
@@ -141,6 +176,15 @@ export function simulateAtCurvePosition(
  * Used by the live market-analytics endpoints to report current
  * estimated slippage — always reflects the pool's actual reserves.
  */
+/**
+ * The pool's fee schedule is keyed to its own clock: the current slot for a slot-activated pool (every pool ELF
+ * deploys), Unix seconds for a timestamp-activated one. Feeding seconds to a slot pool makes the quote assume the
+ * wrong fee period and overstate the output, so the real swap then fails its slippage check (ExceededSlippage).
+ */
+export async function resolveCurrentPoint(connection: Pick<Connection, "getSlot">, activationType: ActivationType): Promise<BN> {
+  return activationType === ActivationType.Slot ? new BN(await connection.getSlot("confirmed")) : new BN(Math.floor(Date.now() / 1000));
+}
+
 export async function getOnchainSwapQuote(
   connection: Connection,
   poolAddress: PublicKey,
@@ -161,7 +205,7 @@ export async function getOnchainSwapQuote(
     amountIn,
     swapMode: SwapMode.ExactIn,
     hasReferral: false,
-    currentPoint: new BN(Math.floor(Date.now() / 1000)),
+    currentPoint: await resolveCurrentPoint(connection, config.activationType),
     eligibleForFirstSwapWithMinFee: false,
   });
 }

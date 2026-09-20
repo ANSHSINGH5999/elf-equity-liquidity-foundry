@@ -104,8 +104,12 @@ the in-memory map does not coordinate across processes.
 - The UI surfaces distinguishable error states for: wallet rejection,
   insufficient funds, blockhash expiration, and RPC unavailability (see
   `apps/web/src/components/design/review-step.tsx#friendlyTxError`).
-- No transaction is ever marked "confirmed" in the UI without an actual
-  `connection.confirmTransaction` round-trip.
+- No transaction is ever marked "confirmed" in the UI without the chain reporting it
+  (`getSignatureStatuses`, HTTP polling) at `confirmed`/`finalized` with no error. A transaction
+  is sent exactly once (`submitAndConfirm`); a confirmation timeout or an unreachable RPC yields
+  an "unconfirmed" state that keeps the signature and never resends. The confirmation module
+  has no send method in its type, and a test fails if any app code calls `confirmTransaction`
+  or a WebSocket subscription.
 
 ## Provider adapters
 
@@ -156,8 +160,36 @@ for the full `LaunchStage` lifecycle.
 - **Analyst endpoint (`POST /api/markets/:id/analyze`)** takes no body (the
   server reads the market itself, so a caller cannot feed it invented numbers),
   is rate-limited to 10/min, makes no external call, and its output passes an
-  advice/prediction guardrail. It holds no API key today; a future LLM provider
-  must keep its key server-side.
+  advice/prediction guardrail. It holds no API key.
+- **Groq (`POST /api/ai/market-analysis`) and CoinCap (`GET /api/market/external`).**
+  Both keys are server-only (`GROQ_API_KEY`, `COINCAP_API_KEY`): no `NEXT_PUBLIC_`
+  variant exists, no client component references a provider origin or key name
+  (asserted in `tests/security/ai-integration-hygiene.test.ts`), the key is used only
+  as the Bearer credential to the fixed provider origin, and it is never logged,
+  thrown, returned or placed in a URL. The built client bundle was scanned for the
+  key values and provider origins (zero hits).
+  - *Untrusted output.* Groq's reply is schema-validated (strict, no extra fields),
+    every digit must match a value in the server-built snapshot, advice/prediction
+    language is rejected (same guardrail as the analyst), and addresses/links are
+    dropped. Statements that fail are discarded, not repaired; if the summary fails
+    the whole answer is discarded.
+  - *No client-supplied facts.* The AI route accepts exactly `{ marketId }`
+    (strict schema, 1 KB body cap); the server reads the authoritative data.
+  - *Prompt injection.* The prompt is fixed; the model sees only numbers and short
+    enums the server produced — no asset names, addresses, provider text or user
+    text — so there is no attacker-controlled string in the prompt. CoinCap data is
+    never sent to the model.
+  - *Availability.* Rate limits (AI 5/min, external 30/min), 20 s / 8 s timeouts,
+    bounded response sizes, short TTL caches (AI 60 s keyed by snapshot content;
+    CoinCap 30 s), and closed sets of failure reasons — provider error bodies are
+    never forwarded.
+  - *CoinCap responses* are untrusted: parsed, range-checked (positive price,
+    valid timestamp, id must equal the id asked for), normalised, and reported as
+    "malformed" rather than repaired. Asset ids are validated before any request.
+  - *Residual risk.* The model's qualitative wording (e.g. "rose" vs "fell") and
+    spelled-out numbers are not machine-verified; the UI labels the text
+    AI-generated and shows the server-built evidence beside it. The in-memory rate
+    limiter is per-instance (as everywhere else in this app).
 - **New read routes are rate-limited** (`/risk` 30/min, `/analyze` 10/min,
   and the previously unlimited `/quote` now 60/min, since the terminal polls it).
 - **New SQL** (`getTopTraderVolumeShare`) uses a Prisma tagged template —
@@ -165,11 +197,75 @@ for the full `LaunchStage` lifecycle.
 - Balances are read client-side via the public RPC only; an unreadable balance
   is `null`/"unavailable", never `0`.
 
-Known gap carried forward (not introduced here): the deployment wizard's
-`signAndSend` in `review-step.tsx` still calls `confirmTransaction` without
-checking the returned `err`. Preflight simulation catches nearly all failures
-first, so this is low-likelihood, but it should get the same fix the trading
-terminal received.
+Resolved (2026-09-19): the deployment wizard and the trading terminal now share one confirmation
+path (`submitAndConfirm` → `confirmTransactionByPolling`), which checks the on-chain `err`, is bounded
+by `lastValidBlockHeight` and a hard time limit, and works with RPC providers that do not support
+WebSocket subscriptions.
+
+## Simulation Lab and Market Health
+
+**Simulation Lab (`POST/GET /api/markets/simulation-lab`)**
+- Off-chain by construction: it imports no wallet, keypair, transaction-building
+  or deployment code and performs no database writes. `tests/security/simulation-lab-off-chain.test.ts`
+  scans every Lab file for signing/sending/key/deployment/DB-write patterns, and
+  the engine is exercised against a connection that throws on any use.
+- The client names a stored curve config by id and one of six scenarios; the
+  request schema is `.strict()`, so extra fields (e.g. curve parameters or
+  liquidity) are rejected with 400. Curve position is bounded to 0–95%, sides to
+  exactly four `buy|sell`, ids to 64 characters.
+- Rate-limited (30/min per client key for runs, 60/min for context reads); the
+  response is assembled from explicit fields and never serializes a database row.
+- Results are session-scoped in the browser. Stored runs are treated as
+  untrusted on load: anything without the off-chain labels or expected shape is
+  dropped, and only `sessionStorage` is used (never `localStorage`).
+
+**Market Health (`GET /api/markets/:id/health`, and `health` inside `/risk`)**
+- Read-only, same public-read pattern as the other market analytics routes:
+  market data is public, there is no ownership assumption taken from the client.
+- All database access is time-bounded and capped (500 liquidity rows, 5 largest
+  trades, grouped aggregates) and parameterized (tagged `$queryRaw`); there is no
+  string-built SQL.
+- Rate-limited (30/min), standard error envelope, no stack traces, no secrets;
+  the Pyth key stays inside the server-only Pyth module.
+- Wording is constrained: the engine never states or implies fraud,
+  manipulation or intent, never gives advice, and a test enforces this.
+
+## Network guard (wallet / cluster compatibility)
+
+**The bug it closes.** The Wallet Standard adapter's `signTransaction()` sends the transaction to the wallet
+*without a `chain`* (only `sendTransaction()` passes one). The wallet therefore signs and simulates on whatever
+network it has active — Mainnet for a default MetaMask — no matter which RPC ELF built the transaction against.
+A devnet transaction (devnet blockhash, devnet fee payer) shown to a Mainnet wallet cannot simulate there, which
+surfaces as "reverted during simulation / unknown error". ELF's own server-side simulation was passing.
+
+**What was proven next (read from MetaMask's injected Wallet Standard code).** The chain-less `signTransaction` was only
+part of it. MetaMask (1) creates a **Mainnet** session in `standard:connect` (no network argument exists), (2) sends every
+`signMessage` / `signTransaction` with `scope: wallet.scope`, and (3) **ignores the `chain` field** it is given;
+`solana:signMessage` has none. Its session in fact grants Devnet as well, but it activates Mainnet first. So the network in
+the approval window is the wallet's *active session scope*, and no per-call parameter can change it.
+
+**What ELF does now.**
+- One definition of the cluster: the RPC URL, via `resolveClusterFromRpcUrl` (server and browser share it; the server also
+  verifies the RPC's genesis hash before every transaction build, and the browser confirms `/api/health` reports the same cluster).
+- The wallet's **active scope is read** (`wallet.scope`, CAIP-2) and compared with the configured cluster. Before ANY
+  `signMessage` (the ownership proof) or `signTransaction`, ELF refuses unless they match:
+  "MetaMask is connected to Solana Mainnet. Switch this dapp to Solana Devnet before continuing." Buttons are disabled and the
+  wallet is never asked. Wallets that expose no active scope fall back to the advertised-chains check (`compatible` /
+  `mismatch` / `unverifiable` with an advisory).
+- An explicit **Switch** button (never automatic) asks the wallet, through its own session API, for a session that includes
+  the configured cluster for the connected account, and — only if the granted session really contains that scope for that
+  exact account — selects it (the assignment MetaMask's own `updateSession` performs). It re-reads the scope and throws unless
+  it now matches. Nothing is signed. If the wallet later resets its scope, the sign-time guard blocks again.
+- The wallet still performs every signature; ELF never sees a key and still submits through its own connection with
+  simulation on. `chain` is still passed to wallets that honour it.
+- A sanitized diagnostic is logged per operation (configured cluster, advertised chains, active scope, requested chain,
+  public key, operation, allowed) and never keys, message text or transaction bytes.
+- Explorer links are produced only by `explorerTxUrl` / `explorerAddressUrl` for the configured cluster.
+
+**Limits.** The active-scope check relies on MetaMask's non-standard `scope` / `client` / `updateSession` members, which can
+change between MetaMask versions (the guard then degrades to the advertised-chains check). Wallets that expose no active
+network (e.g. legacy native adapters) cannot be verified; check the network in the wallet's approval window. Mainnet support
+is unchanged: configure the mainnet RPC and the guard requires a mainnet-capable wallet.
 
 ## Known limitations (see also README)
 

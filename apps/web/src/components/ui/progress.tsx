@@ -6,7 +6,7 @@ export function Progress({ value, className, barClassName }: { value: number; cl
     <div className={cn("h-1.5 w-full overflow-hidden rounded-full bg-surface-elevated", className)}>
       <div
         className={cn(
-          "h-full rounded-full bg-gradient-to-r from-accent to-emerald-400 transition-[width] duration-700 ease-[var(--ease-premium)]",
+          "h-full rounded-full bg-gradient-to-r from-[#ffe2b2] via-[#e2ebf5] to-[#9fe0ff] transition-[width] duration-700 ease-[var(--ease-premium)]",
           barClassName,
         )}
         style={{ width: `${clamped}%` }}

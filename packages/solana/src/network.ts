@@ -9,7 +9,7 @@ import type { ElfCluster } from "./connection.js";
  * invisible until funds move.
  * https://docs.solana.com/clusters
  */
-const GENESIS_HASHES: Record<ElfCluster, string> = {
+export const GENESIS_HASHES: Record<ElfCluster, string> = {
   "mainnet-beta": "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d",
   devnet: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
 };

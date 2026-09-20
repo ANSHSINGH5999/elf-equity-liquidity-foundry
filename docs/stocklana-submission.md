@@ -21,6 +21,7 @@ One issuer workflow: **discover an asset → design a market → compile Meteora
 - **Graduation monitor:** built on the one real DBC trigger (quote reserve vs migration threshold); volume and market cap are shown as not-applicable, never invented as gates.
 - **Issuer risk dashboard:** NORMAL / WATCH / DATA UNAVAILABLE indicators with the formula behind each number.
 - **Market analyst:** deterministic, rule-based, source-traced analysis with an advice/prediction guardrail (not a language model).
+- **AI Market Analysis (Groq):** a server-side AI explanation of a snapshot of verified data; every number is checked against the snapshot and the panel is labelled AI-generated. **External Market Data (CoinCap):** quote-token context only, never the on-chain price.
 - Blockchain indexer, indexed analytics, live PreStocks asset discovery.
 
 ## Architecture (short)
@@ -30,21 +31,22 @@ Next.js 16 + pnpm/Turborepo monorepo. Only `@elf/meteora-adapter` touches the Me
 Non-custodial (no private key ever leaves the wallet); server-generated ephemeral keypairs are never returned by any API — enforced by runtime tests and a static scan of every route and client component; rate limiting on all transaction-building and analytics routes; Pyth key server-side only (verified absent from the client bundle). See `docs/security.md`.
 
 ## Real transaction evidence
-See `docs/demo-evidence.md`. **Status: live devnet run not yet executed** (wallet unfunded at time of writing); the file lists exactly what has and has not been verified. Do not treat any signature as evidence until it is recorded there.
+See `docs/demo-evidence.md`. **Status: real Devnet run executed** — createConfig, createPool, six BUYs and four SELLs are finalized on-chain (all 10 indexed trades were checked against the chain; the main ones are recorded with their signatures; the latest BUY and the SELL were confirmed through the HTTP-polling confirmation path and indexed). The file lists exactly what has and has not been verified. Do not treat any signature as evidence until it is recorded there.
 
 ## Demo flow
 `docs/demo-script.md`.
 
 ## Known limitations
 - Devnet only; no mainnet deployment.
-- The new market UI (trading terminal, transaction history, graduation monitor, issuer dashboard, market analyst) has **not yet been visually validated against a live market**: no pool exists until the devnet wallet is funded. It is verified by type checks, lint, a production build, state-logic and API tests, and runtime 404/400 smoke tests — not by eye with real data.
+- The market UI was verified against real Devnet pools through its APIs; the analytics pages still need a by-eye pass with the final build.
+- The compiled fee schedule's duration is passed to the SDK in slots for these slot-activated pools, so a nominal 24h schedule runs about 9.6 hours. It is not shown as hours anywhere in the UI; a decision on converting it is pending.
 - Pyth equity/xStock/Ondo feeds require an entitlement our key does not have; the oracle panel reports the restriction.
 - Tessera's public API is intermittently unreachable (TLS resets) and is feature-flagged off; it is not part of the demo path.
 - Clawpump was evaluated and not integrated (its launch API targets pump.fun and requires funded agent wallets — no documented Meteora pairing).
-- The market analyst is rule-based; no LLM provider is configured (the provider interface is in place).
+- The Market analyst is rule-based; the separate AI Market Analysis panel uses Groq and needs `GROQ_API_KEY` (its qualitative wording is not machine-verified). External Market Data needs `COINCAP_API_KEY`; ELF's equity assets are not listed on CoinCap.
 - Live market cap is not shown (circulating supply is not read on-chain).
 - Trading UI supports pre-migration DBC pools only; graduated pools show a notice.
 - Rate limiting is in-memory (single-instance).
 
 ## Roadmap
-Mainnet hardening and a shared rate-limit store; an entitled Pyth key for live equity/xStock/Ondo comparison; an optional LLM analyst provider behind the existing guardrail; post-migration (DAMM v2) trading surface; alerting on risk-indicator changes.
+Mainnet hardening and a shared rate-limit store; an entitled Pyth key for live equity/xStock/Ondo comparison; post-migration (DAMM v2) trading surface; alerting on risk-indicator changes.

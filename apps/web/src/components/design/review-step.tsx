@@ -10,8 +10,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Input, Label } from "@/components/ui/input";
 import { apiFetch, ApiError } from "@/lib/api-client";
+import { useClusterSigner } from "@/components/providers/use-cluster-signer";
+import { NetworkGuardBanner } from "@/components/layout/network-guard-banner";
 import type { AssetDto, CurveConfigDto } from "@/lib/api-types";
-import { explorerAddressUrl, explorerTxUrl, buildOwnershipMessage } from "@elf/solana";
+import { explorerAddressUrl, explorerTxUrl, buildOwnershipMessage, type ConfirmationOutcome } from "@elf/solana";
+import { interpretConfirmation } from "@/lib/confirmation-view";
+import { checkStatusAgain, submitAndConfirm } from "@/lib/submit-transaction";
 import { CLUSTER } from "@/lib/solana-config";
 import { cn, formatUsd, truncateAddress } from "@/lib/utils";
 
@@ -21,6 +25,7 @@ type StepStatus =
   | "awaiting_wallet"
   | "submitted"
   | "confirming"
+  | "unconfirmed"
   | "confirmed"
   | "error";
 
@@ -30,6 +35,7 @@ const STATUS_LABEL: Record<StepStatus, string> = {
   awaiting_wallet: "Waiting for wallet…",
   submitted: "Transaction submitted…",
   confirming: "Confirming…",
+  unconfirmed: "Submitted — confirmation not seen yet",
   confirmed: "Confirmed",
   error: "Failed",
 };
@@ -41,6 +47,7 @@ const STATUS_DOT_CLASS: Record<StepStatus, string> = {
   awaiting_wallet: "bg-accent animate-pulse",
   submitted: "bg-accent animate-pulse",
   confirming: "bg-accent animate-pulse",
+  unconfirmed: "bg-warning",
   confirmed: "bg-positive",
   error: "bg-negative",
 };
@@ -50,6 +57,7 @@ interface ConfigResponse {
   configAddress: string;
   quoteMint: string;
   transactionBase64: string | null;
+  lastValidBlockHeight?: number;
   alreadyConfirmed: boolean;
 }
 
@@ -57,8 +65,12 @@ interface PoolResponse {
   poolAddress: string;
   baseMint: string;
   transactionBase64: string | null;
+  lastValidBlockHeight?: number;
   alreadyConfirmed: boolean;
 }
+
+/** A submitted deployment transaction whose outcome ELF could not learn. It is only ever looked up again, never resent. */
+type PendingTx = { signature: string; lastValidBlockHeight: number };
 
 interface LaunchDto {
   id: string;
@@ -68,9 +80,11 @@ interface LaunchDto {
   baseMint: string | null;
 }
 
-const LAUNCH_STORAGE_KEY = (candidateId: string) => `elf.launchId.${candidateId}`;
+export const LAUNCH_STORAGE_KEY = (candidateId: string) => `elf.launchId.${candidateId}`;
 
 function friendlyTxError(error: unknown): string {
+  // The network guard's refusal must reach the user verbatim (it also contains the word "network").
+  if (error instanceof Error && error.name === "WalletNetworkMismatchError") return error.message;
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes("User rejected") || message.includes("rejected")) {
     return "Transaction was rejected in your wallet.";
@@ -110,7 +124,8 @@ function apiErrorMessage(err: unknown): string {
 }
 
 export function ReviewStep({ asset, candidate }: { asset: AssetDto; candidate: CurveConfigDto }) {
-  const { publicKey, signTransaction, signMessage, connected } = useWallet();
+  const { publicKey, connected } = useWallet();
+  const clusterSigner = useClusterSigner();
   const { connection } = useConnection();
   const router = useRouter();
 
@@ -123,11 +138,6 @@ export function ReviewStep({ asset, candidate }: { asset: AssetDto; candidate: C
    */
   async function signOwnership(route: string, resourceId: string): Promise<{ signature: string; authTimestamp: number }> {
     if (!publicKey) throw new Error("Connect a wallet first.");
-    if (!signMessage) {
-      throw new Error(
-        "This wallet does not support message signing, which ELF requires to verify you control this deployment. Please use a different wallet.",
-      );
-    }
     const authTimestamp = Date.now();
     const message = buildOwnershipMessage({
       route,
@@ -135,7 +145,8 @@ export function ReviewStep({ asset, candidate }: { asset: AssetDto; candidate: C
       payerPublicKey: publicKey.toBase58(),
       timestamp: authTimestamp,
     });
-    const signatureBytes = await signMessage(new TextEncoder().encode(message));
+    // Same network guard as transactions: no message signature is requested while the wallet is on another network.
+    const signatureBytes = await clusterSigner.signMessage(new TextEncoder().encode(message));
     return { signature: bs58.encode(signatureBytes), authTimestamp };
   }
 
@@ -145,6 +156,11 @@ export function ReviewStep({ asset, candidate }: { asset: AssetDto; candidate: C
   const [error, setError] = useState<string | null>(null);
   const [configSig, setConfigSig] = useState<string | null>(null);
   const [poolSig, setPoolSig] = useState<string | null>(null);
+  const [configPending, setConfigPending] = useState<PendingTx | null>(null);
+  const [poolPending, setPoolPending] = useState<PendingTx | null>(null);
+  const [configNotice, setConfigNotice] = useState<string | null>(null);
+  const [poolNotice, setPoolNotice] = useState<string | null>(null);
+  const [checkingStep, setCheckingStep] = useState<"config" | "pool" | null>(null);
   const [configAddress, setConfigAddress] = useState<string | null>(null);
   const [poolAddress, setPoolAddress] = useState<string | null>(null);
   const [firstBuyUsd, setFirstBuyUsd] = useState("0");
@@ -190,16 +206,72 @@ export function ReviewStep({ asset, candidate }: { asset: AssetDto; candidate: C
     }
   }
 
-  async function signAndSend(transactionBase64: string, onStatus: (s: StepStatus) => void): Promise<string> {
-    if (!publicKey || !signTransaction) throw new Error("Connect a wallet first.");
+  async function signAndSend(
+    transactionBase64: string,
+    lastValidBlockHeight: number | undefined,
+    onStatus: (s: StepStatus) => void,
+    onSubmitted: (signature: string) => void,
+  ): Promise<{ signature: string; lastValidBlockHeight: number; outcome: ConfirmationOutcome }> {
+    if (!publicKey) throw new Error("Connect a wallet first.");
     const transaction = Transaction.from(Buffer.from(transactionBase64, "base64"));
     onStatus("awaiting_wallet");
-    const signed = await signTransaction(transaction);
+    const signed = await clusterSigner.sign(transaction); // signs for ELF's configured cluster, or refuses on a network mismatch
+    // The server returns the block height its blockhash lives to. If it were ever missing, assume the standard 150-block
+    // lifetime from now: later than the truth, so at worst ELF waits longer — it never declares expiry early.
+    const lastValid = lastValidBlockHeight ?? (await connection.getBlockHeight("confirmed")) + 150;
     onStatus("submitted");
-    const signature = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: false });
-    onStatus("confirming");
-    await connection.confirmTransaction(signature, "confirmed");
-    return signature;
+    // Sent exactly once, then only looked up by signature over HTTP (no WebSocket subscription).
+    const { signature, outcome } = await submitAndConfirm(connection, signed, {
+      lastValidBlockHeight: lastValid,
+      onSubmitted: (sig) => {
+        onSubmitted(sig);
+        onStatus("confirming");
+      },
+    });
+    return { signature, lastValidBlockHeight: lastValid, outcome };
+  }
+
+  /** The one place a confirmation result becomes step state. Returns true only when the chain confirmed it. */
+  function applyStepOutcome(step: "config" | "pool", signature: string, lastValidBlockHeight: number, outcome: ConfirmationOutcome): boolean {
+    const setStatus = step === "config" ? setConfigStatus : setPoolStatus;
+    const setPending = step === "config" ? setConfigPending : setPoolPending;
+    const setNotice = step === "config" ? setConfigNotice : setPoolNotice;
+    const view = interpretConfirmation(outcome);
+    if (view.kind === "confirmed") {
+      setPending(null);
+      setNotice(null);
+      setStatus("confirmed");
+      return true;
+    }
+    if (view.kind === "failed") {
+      setPending(null);
+      setNotice(null);
+      setError(view.message);
+      setStatus("error");
+      return false;
+    }
+    setPending({ signature, lastValidBlockHeight });
+    setNotice(view.message);
+    setStatus("unconfirmed");
+    return false;
+  }
+
+  // The pool is confirmed on-chain; let ELF's own record catch up (best effort — trading never depends on it).
+  function finalizePool(id: string) {
+    void apiFetch("/api/dbc/pool/confirm", { method: "POST", body: JSON.stringify({ launchId: id }) }).catch(() => undefined);
+  }
+
+  async function checkStep(step: "config" | "pool") {
+    const pending = step === "config" ? configPending : poolPending;
+    if (!pending || checkingStep) return;
+    setCheckingStep(step);
+    setError(null);
+    try {
+      const outcome = await checkStatusAgain(connection, pending.signature, pending.lastValidBlockHeight);
+      if (applyStepOutcome(step, pending.signature, pending.lastValidBlockHeight, outcome) && step === "pool" && launchId) finalizePool(launchId);
+    } finally {
+      setCheckingStep(null);
+    }
   }
 
   async function deployConfig() {
@@ -229,9 +301,8 @@ export function ReviewStep({ asset, candidate }: { asset: AssetDto; candidate: C
       }
 
       estimateFee(result.transactionBase64);
-      const signature = await signAndSend(result.transactionBase64, setConfigStatus);
-      setConfigSig(signature);
-      setConfigStatus("confirmed");
+      const sent = await signAndSend(result.transactionBase64, result.lastValidBlockHeight, setConfigStatus, setConfigSig);
+      applyStepOutcome("config", sent.signature, sent.lastValidBlockHeight, sent.outcome);
     } catch (err) {
       setError(apiErrorMessage(err));
       setConfigStatus("error");
@@ -263,17 +334,16 @@ export function ReviewStep({ asset, candidate }: { asset: AssetDto; candidate: C
       }
 
       estimateFee(result.transactionBase64);
-      const signature = await signAndSend(result.transactionBase64, setPoolStatus);
-      setPoolSig(signature);
-      setPoolStatus("confirmed");
+      const sent = await signAndSend(result.transactionBase64, result.lastValidBlockHeight, setPoolStatus, setPoolSig);
+      if (applyStepOutcome("pool", sent.signature, sent.lastValidBlockHeight, sent.outcome)) finalizePool(launchId);
     } catch (err) {
       setError(apiErrorMessage(err));
       setPoolStatus("error");
     }
   }
 
-  const configBusy = configStatus !== "idle" && configStatus !== "confirmed" && configStatus !== "error";
-  const poolBusy = poolStatus !== "idle" && poolStatus !== "confirmed" && poolStatus !== "error";
+  const configBusy = configStatus !== "idle" && configStatus !== "confirmed" && configStatus !== "error" && configStatus !== "unconfirmed";
+  const poolBusy = poolStatus !== "idle" && poolStatus !== "confirmed" && poolStatus !== "error" && poolStatus !== "unconfirmed";
 
   return (
     <Card>
@@ -308,7 +378,7 @@ export function ReviewStep({ asset, candidate }: { asset: AssetDto; candidate: C
               <dd className="font-tabular mt-1 capitalize text-foreground">{CLUSTER}</dd>
             </div>
             <div>
-              <dt className="text-xs tracking-[0.02em] text-subtle-foreground">Migration threshold</dt>
+              <dt className="text-xs tracking-[0.02em] text-subtle-foreground">Migration market cap</dt>
               <dd className="font-tabular mt-1 text-foreground">{formatUsd(candidate.migrationMarketCapUsd, { compact: true })}</dd>
             </div>
             <div>
@@ -333,9 +403,9 @@ export function ReviewStep({ asset, candidate }: { asset: AssetDto; candidate: C
         </div>
 
         {!connected && (
-          <div className="flex flex-col items-center justify-between gap-4 rounded-xl border border-purple-500/30 bg-gradient-to-r from-[#141029] to-[#0c101a] p-5 sm:flex-row">
+          <div className="flex flex-col items-center justify-between gap-4 rounded-xl border border-[rgba(196,214,232,0.24)] bg-gradient-to-r from-[rgba(255,226,178,0.06)] to-[rgba(150,196,244,0.06)] backdrop-blur-xl p-5 sm:flex-row">
             <div className="flex items-center gap-3.5">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#282147] shadow-[0_0_15px_rgba(171,159,242,0.3)]">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/[0.06]">
                 <svg viewBox="0 0 128 128" fill="none" className="h-6 w-6">
                   <rect width="128" height="128" rx="28" fill="#AB9FF2" />
                   <path
@@ -372,11 +442,13 @@ export function ReviewStep({ asset, candidate }: { asset: AssetDto; candidate: C
 
         {error && (
           <div className="rounded-[var(--radius-sm)] border border-negative/30 bg-negative-muted p-4 text-sm text-negative">
-            {error}
+            <span className="whitespace-pre-line">{error}</span>
           </div>
         )}
 
         <div className="space-y-3">
+          <NetworkGuardBanner assessment={clusterSigner.assessment} cluster={CLUSTER} walletName={clusterSigner.walletName} canSwitch={clusterSigner.canSwitch} onSwitch={clusterSigner.switchNetwork} />
+
           <div className="flex items-center justify-between gap-4 rounded-[var(--radius-md)] border border-border-strong bg-surface-elevated/40 p-5 transition-colors duration-[var(--duration-base)] hover:bg-surface-elevated/70">
             <div>
               <p className="text-sm font-medium text-foreground">1. Create pool configuration</p>
@@ -398,9 +470,12 @@ export function ReviewStep({ asset, candidate }: { asset: AssetDto; candidate: C
                   View transaction on Solana Explorer
                 </a>
               )}
+              {configStatus === "unconfirmed" && configPending && (
+                <UnconfirmedNotice notice={configNotice} checking={checkingStep === "config"} onCheck={() => checkStep("config")} />
+              )}
             </div>
             <Button
-              disabled={!publicKey || configBusy || configStatus === "confirmed" || poolBusy}
+              disabled={!publicKey || clusterSigner.blocked || configBusy || configStatus === "confirmed" || configStatus === "unconfirmed" || poolBusy}
               onClick={deployConfig}
             >
               {configBusy ? STATUS_LABEL[configStatus] : configStatus === "confirmed" ? "Done" : "Open in wallet"}
@@ -449,9 +524,12 @@ export function ReviewStep({ asset, candidate }: { asset: AssetDto; candidate: C
                   </a>
                 </div>
               )}
+              {poolStatus === "unconfirmed" && poolPending && (
+                <UnconfirmedNotice notice={poolNotice} checking={checkingStep === "pool"} onCheck={() => checkStep("pool")} />
+              )}
             </div>
             <Button
-              disabled={!launchId || configStatus !== "confirmed" || poolBusy || poolStatus === "confirmed"}
+              disabled={!launchId || clusterSigner.blocked || configStatus !== "confirmed" || poolBusy || poolStatus === "confirmed" || poolStatus === "unconfirmed"}
               onClick={deployPool}
             >
               {poolBusy ? STATUS_LABEL[poolStatus] : poolStatus === "confirmed" ? "Done" : "Open in wallet"}
@@ -472,5 +550,17 @@ export function ReviewStep({ asset, candidate }: { asset: AssetDto; candidate: C
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/** Shown while a submitted deployment transaction's outcome is unknown: says so, never resends, offers only a look-up. */
+function UnconfirmedNotice({ notice, checking, onCheck }: { notice: string | null; checking: boolean; onCheck: () => void }) {
+  return (
+    <div className="mt-2 space-y-2 rounded-[var(--radius-sm)] border border-warning/30 bg-warning-muted px-3 py-2.5" role="status">
+      {notice && <p className="text-xs leading-relaxed text-warning">{notice}</p>}
+      <Button type="button" variant="secondary" size="sm" disabled={checking} onClick={onCheck}>
+        {checking ? "Checking…" : "Check status again"}
+      </Button>
+    </div>
   );
 }

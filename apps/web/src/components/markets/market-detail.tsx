@@ -9,6 +9,7 @@ import { MarketQualityCard } from "@/components/markets/market-quality-card";
 import { DataFreshnessBadge } from "@/components/markets/data-freshness-badge";
 import { TradePanel } from "@/components/markets/trade-panel";
 import { PriceOraclePanel } from "@/components/markets/price-oracle-panel";
+import { ExternalMarketPanel } from "@/components/markets/external-market-panel";
 import { TransactionsTable, type IndexedTrade } from "@/components/markets/transactions-table";
 import { GraduationMonitor } from "@/components/markets/graduation-monitor";
 import Link from "next/link";
@@ -237,6 +238,7 @@ export function MarketDetail({ marketId }: { marketId: string }) {
             </Card>
           )}
           <PriceOraclePanel onChainPriceUsd={o.priceUsd.value} feeds={o.priceOracle} />
+          <ExternalMarketPanel marketId={o.marketId} />
           <MarketQualityCard
             score={o.marketQualityScore}
             referencePriceSource={o.referencePriceSource}

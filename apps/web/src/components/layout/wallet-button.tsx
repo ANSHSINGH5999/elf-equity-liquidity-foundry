@@ -3,6 +3,8 @@
 import * as React from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
+import { explorerAddressUrl } from "@elf/solana";
+import { CLUSTER } from "@/lib/solana-config";
 import { truncateAddress } from "@/lib/utils";
 
 // Official Phantom Ghost SVG Icon
@@ -67,9 +69,8 @@ export function WalletButton() {
         type="button"
         onClick={handleConnectPhantom}
         disabled={connecting}
-        className="group relative inline-flex items-center gap-2 rounded-lg border border-purple-500/30 bg-gradient-to-r from-[#17142b] via-[#1b1733] to-[#120f24] px-3.5 py-1.5 text-xs font-semibold text-[#c4b5fd] shadow-[0_0_15px_-3px_rgba(171,159,242,0.25)] transition-all hover:border-purple-400/60 hover:text-white hover:shadow-[0_0_20px_-2px_rgba(171,159,242,0.45)] hover:-translate-y-0.5 active:translate-y-0"
+        className="hair-pill inline-flex items-center gap-2 bg-white/[0.03] px-5 py-2.5 text-[13px] text-[#e8ecf0] transition-colors [font-variation-settings:'wght'_581] hover:bg-white/[0.09] hover:text-white disabled:opacity-60"
       >
-        <PhantomIcon className="h-4 w-4 transition-transform group-hover:scale-110" />
         <span>{connecting ? "Connecting…" : "Connect Phantom"}</span>
       </button>
     );
@@ -82,24 +83,23 @@ export function WalletButton() {
       <button
         type="button"
         onClick={() => setMenuOpen((prev) => !prev)}
-        className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-[#0c101a] px-3 py-1.5 text-xs font-mono text-foreground transition-all hover:border-purple-400/40 hover:bg-[#121624]"
+        className="hair-pill inline-flex items-center gap-2 bg-white/[0.03] px-4 py-2 text-[13px] text-[#e8ecf0] transition-colors hover:bg-white/[0.09]"
       >
         <div className="flex h-2 w-2 items-center justify-center">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_#22c55e]" />
         </div>
-        <PhantomIcon className="h-3.5 w-3.5" />
         <span>{truncateAddress(base58)}</span>
         <span className="text-[10px] text-muted-foreground">▾</span>
       </button>
 
       {menuOpen && (
-        <div className="absolute right-0 top-full mt-2 w-56 rounded-xl border border-white/10 bg-[#0c101a] p-2 shadow-2xl backdrop-blur-xl z-50">
+        <div className="surface-glass absolute right-0 top-full z-50 mt-2 w-56 rounded-2xl p-2">
           <div className="border-b border-white/5 px-3 py-2">
             <div className="flex items-center justify-between">
               <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
                 Connected Wallet
               </span>
-              <span className="rounded bg-purple-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-purple-300 border border-purple-500/20">
+              <span className="rounded-full border border-[rgba(196,214,232,0.3)] bg-white/[0.05] px-2 py-0.5 text-[9px] font-semibold text-[#e8ecf0]">
                 {wallet?.adapter.name ?? "Phantom"}
               </span>
             </div>
@@ -119,7 +119,7 @@ export function WalletButton() {
             </button>
 
             <a
-              href={`https://explorer.solana.com/address/${base58}?cluster=devnet`}
+              href={explorerAddressUrl(base58, CLUSTER)}
               target="_blank"
               rel="noopener noreferrer"
               className="flex w-full items-center justify-between rounded-md px-3 py-1.5 text-left text-xs text-muted-foreground hover:bg-white/5 hover:text-white"

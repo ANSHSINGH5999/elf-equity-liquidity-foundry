@@ -134,13 +134,18 @@ export interface CurveCandidate {
   isRecommended: boolean;
 }
 
+/** Price impact (bps) above which the simulation flags a trade — the same cutoff the design-flow simulation step has always used. */
+export const PRICE_IMPACT_WATCH_BPS = 500;
+
 export interface SimulationTradeResult {
   tradeSizeUsd: TradeSizeUsd;
   side: "buy" | "sell";
   estimatedExecutionPrice: number;
   estimatedPriceImpactBps: number;
   postTradePrice: number;
+  /** Quote reserve (USD) after this trade, from the SDK's own curve integral; null when the trade could not be filled. */
   reserveQuoteAfter: number | null;
+  /** Not calculated by the engine. */
   reserveBaseAfter: number | null;
   feeUsd: number;
   marketQualityEffect: number;
@@ -153,6 +158,17 @@ export interface SimulationScenarioResult {
   trades: SimulationTradeResult[];
   worstCasePriceImpactBps: number;
   label: "SIMULATED";
+  /**
+   * Optional: absent on results stored before the Simulation Lab existed.
+   * `curveProgressFraction` is ELF's positioning heuristic (linear in sqrt-price
+   * space) — NOT quote-reserve progress; use `startQuoteReserveUsd` for that.
+   */
+  curveProgressFraction?: number;
+  startPriceUsd?: number;
+  /** Real quote reserve (USD) at the scenario's start position (SDK curve integral). */
+  startQuoteReserveUsd?: number;
+  /** Real DBC graduation trigger: the quote reserve (USD) the pool must reach. */
+  migrationThresholdUsd?: number;
 }
 
 export interface SimulationRun {
@@ -426,12 +442,113 @@ export interface RiskIndicator {
   note: string | null;
 }
 
+/** Indexer lag (seconds) beyond which data is "delayed" — one definition for the freshness badge, the risk indicator and market health. */
+export const INDEXER_DELAYED_AFTER_SECONDS = 300;
+
+/**
+ * Market Health & Anomaly Engine. Events describe MEASURABLE conditions only —
+ * never fraud, manipulation or intent — and there is no composite score.
+ * `INFO` events report data-availability facts (oracle, graduation) and do not
+ * change the market's status; only `WATCH` events do.
+ */
+export type HealthEventType =
+  | "LIQUIDITY_DROP"
+  | "VOLUME_SPIKE"
+  | "TRADE_FREQUENCY_SPIKE"
+  | "LARGE_TRADE"
+  | "TRADE_CONCENTRATION"
+  | "PRICE_DEVIATION"
+  | "ORACLE_UNAVAILABLE"
+  | "ORACLE_RESTRICTED"
+  | "INDEXER_LAG"
+  | "GRADUATION_REACHED";
+
+export type HealthEventSeverity = "WATCH" | "INFO";
+export type HealthDataSource = "ON_CHAIN" | "INDEXED" | "PYTH";
+export type HealthUnit = "usd" | "pct" | "count" | "multiple" | "seconds";
+
+export interface HealthEvent {
+  /** Stable id: type plus the data point it is anchored to. */
+  id: string;
+  type: HealthEventType;
+  severity: HealthEventSeverity;
+  /** When the underlying data point happened (trade / liquidity reading / event time); null for a current-state condition. */
+  occurredAt: string | null;
+  metric: string;
+  unit: HealthUnit | null;
+  observed: number | null;
+  reference: number | null;
+  /** What `reference` is and its unit (it can differ from `unit`, which describes `observed` and `threshold`). */
+  referenceLabel: string | null;
+  referenceUnit: HealthUnit | null;
+  threshold: number | null;
+  explanation: string;
+  dataSources: HealthDataSource[];
+  /** On-chain signature of the transaction behind the event, when there is one. */
+  signature: string | null;
+}
+
+export type HealthSignalId =
+  | "liquidity"
+  | "volume"
+  | "trade_frequency"
+  | "large_trades"
+  | "concentration"
+  | "price_reference"
+  | "oracle"
+  | "indexer"
+  | "graduation";
+
+export interface HealthCheck {
+  id: HealthSignalId;
+  label: string;
+  status: RiskStatus;
+  detail: string;
+}
+
+export interface HealthThresholds {
+  /** Window (hours) the latest activity is measured over. */
+  recentWindowHours: number;
+  /** Window (hours) before the recent window used as the market's own baseline. */
+  baselineWindowHours: number;
+  /** WATCH when liquidity falls more than this % from its peak within the recent window. */
+  liquidityDropPct: number;
+  /** WATCH when recent hourly volume / baseline hourly volume exceeds this. */
+  volumeSpikeMultiple: number;
+  /** WATCH when recent trades-per-hour / baseline trades-per-hour exceeds this. */
+  tradeFrequencyMultiple: number;
+  /** Minimum trades for a comparison to be evaluated at all (baseline, recent, concentration). */
+  minSampleTrades: number;
+  /** Reused from RISK_THRESHOLDS: WATCH when |DBC − live Pyth reference| / reference exceeds this %. */
+  priceDeviationPct: number;
+  /** Reused from RISK_THRESHOLDS: LARGE_TRADE when a trade exceeds this fraction of current liquidity. */
+  largeTradeLiquidityShare: number;
+  /** Reused from RISK_THRESHOLDS: TRADE_CONCENTRATION when one wallet exceeds this fraction of 24h volume. */
+  topTraderVolumeShare: number;
+  /** Reused: INDEXER_DELAYED_AFTER_SECONDS. */
+  indexerLagSeconds: number;
+}
+
+export interface MarketHealth {
+  engine: "elf-deterministic-market-health-v1";
+  status: RiskStatus;
+  evaluatedAt: string;
+  events: HealthEvent[];
+  watchEventCount: number;
+  checks: HealthCheck[];
+  /** Events that carry a real timestamp, oldest first. Only observed events — no inferred status changes. */
+  timeline: HealthEvent[];
+  thresholds: HealthThresholds;
+  disclaimer: string;
+}
+
 export interface IssuerDashboard {
   overview: MarketOverview;
   totalTrades: number;
   uniqueTradersAllTime: number;
   targetLiquidityUsd: number;
   indicators: RiskIndicator[];
+  health: MarketHealth;
 }
 
 /**
@@ -474,6 +591,104 @@ export interface MarketAnalysis {
   disclaimer: string;
 }
 
+// --- Market Launch Copilot -------------------------------------------------
+// A deterministic launch PLAN assembled from ELF's existing engines (curve
+// compiler, simulation engine, Meteora SDK validation, Pyth integration).
+// It is a proposal only: nothing here deploys anything.
+
+/**
+ * The simulation engine reports a trade it cannot fill against the remaining
+ * curve depth as exactly this impact (100%, in basis points). Single source of
+ * truth for both the engine that emits it and the plan that warns about it.
+ */
+export const SIMULATION_MAX_IMPACT_BPS = 10_000;
+
+/** pass / fail are real verdicts; unavailable = could not be evaluated (never a guess); not_run = a step the user has not run yet. */
+export type LaunchCheckStatus = "pass" | "fail" | "unavailable" | "not_run";
+
+export interface LaunchCheck {
+  id: "configuration" | "liquidity_parameters" | "curve_parameters" | "graduation_configuration" | "oracle_configuration" | "simulation";
+  label: string;
+  status: LaunchCheckStatus;
+  detail: string;
+}
+
+/** Outcome of running Meteora's own config validation on a compiled candidate (packages/meteora-adapter/src/validate.ts). */
+export type ConfigValidationResult =
+  | { status: "valid"; derivedThresholdQuote: number | null; derivedThresholdUsd: number | null }
+  | { status: "invalid"; error: string }
+  | { status: "unavailable"; reason: string };
+
+export type LaunchOracleState = "live" | "no_feed" | PythUnavailableReason;
+
+export interface LaunchPlanOracleFeed {
+  kind: PythFeedKind;
+  feedSymbol: string;
+  state: "live" | PythUnavailableReason;
+  priceUsd: number | null;
+}
+
+export interface LaunchScenarioSummary {
+  scenario: SimulationScenarioKind;
+  description: string;
+  worstCasePriceImpactBps: number;
+  /** Simulated trades that hit the engine's impact cap, i.e. could not be filled against the curve's depth. */
+  unfillableTrades: number;
+}
+
+export type SimulationEvaluation =
+  | { status: "not_run" }
+  | { status: "completed"; label: "SIMULATED"; scenarios: LaunchScenarioSummary[] }
+  | { status: "invalid"; reasons: string[] };
+
+export interface LaunchPlan {
+  engine: "elf-deterministic-launch-planner-v1";
+  asset: Pick<TokenizedAsset, "id" | "name" | "symbol" | "issuer" | "assetType" | "referencePriceUsd" | "source" | "mintAddress">;
+  profile: Pick<
+    MarketProfile,
+    "initialLiquidityUsd" | "expectedVolatility" | "riskProfile" | "targetLiquidityUsd" | "targetGraduationUsd" | "quoteToken"
+  >;
+  curve: {
+    candidateId: string;
+    label: string;
+    riskProfile: RiskProfile;
+    rationale: string;
+    isRecommended: boolean;
+    initialMarketCapUsd: number;
+    migrationMarketCapUsd: number;
+    tokenSupply: number;
+    /** initialMarketCapUsd ÷ tokenSupply — the curve's actual starting price. */
+    impliedStartPriceUsd: number;
+    referencePriceUsd: number;
+    scoreComposite: number;
+  };
+  liquidity: LiquidityDistributionSummary & Pick<MarketProfile, "initialLiquidityUsd" | "targetLiquidityUsd" | "quoteToken">;
+  trading: FeeScheduleSummary;
+  graduation: {
+    /** The one on-chain condition. There is no separate volume or market-cap gate. */
+    trigger: string;
+    declaredTargetUsd: number;
+    /** The threshold Meteora's own curve builder derived, in quote-token units / USD; null when it could not be derived. */
+    derivedThresholdQuote: number | null;
+    derivedThresholdUsd: number | null;
+    quoteToken: QuoteToken;
+    migrationOption: MigrationSummary["migrationOption"];
+    migrationFeeBps: number;
+    percentageSupplyOnMigration: number;
+  };
+  oracle: { state: LaunchOracleState; headline: string; note: string; feeds: LaunchPlanOracleFeed[] };
+  simulation: SimulationEvaluation;
+  checks: LaunchCheck[];
+  warnings: string[];
+  assumptions: string[];
+}
+
+export interface ApprovalGate {
+  allowed: boolean;
+  /** Empty when allowed; otherwise every reason the user cannot proceed to wallet review yet. */
+  blockers: string[];
+}
+
 export const DEFAULT_OBJECTIVE_WEIGHTS: Record<RiskProfile, CurveObjectiveWeights> = {
   conservative: {
     minimizePriceImpact: 0.3,
@@ -497,3 +712,113 @@ export const DEFAULT_OBJECTIVE_WEIGHTS: Record<RiskProfile, CurveObjectiveWeight
     maximizeGraduationProbability: 0.3,
   },
 };
+
+/**
+ * ELF SIMULATION LAB — an OFF-CHAIN analytical view of ONE stored curve
+ * configuration under ONE supported scenario. Nothing here is a blockchain
+ * result: every value comes from ELF's simulation engine (Meteora's curve math
+ * evaluated at an assumed position), and every result carries the label.
+ */
+export type LabCheckStatus = "pass" | "warn" | "fail" | "unavailable";
+
+export interface LabCheck {
+  id: "configuration" | "simulation_output" | "price_impact" | "fillable" | "reserve_change" | "live_indicators";
+  label: string;
+  status: LabCheckStatus;
+  detail: string;
+}
+
+export interface SimulatedGraduationState {
+  label: "SIMULATED GRADUATION STATE";
+  /** The one real DBC condition being evaluated. */
+  condition: "quote_reserve_reaches_migration_threshold";
+  migrationThresholdUsd: number;
+  startQuoteReserveUsd: number;
+  /** computeGraduationStatus applied to the scenario's start position. */
+  startPercentComplete: number;
+  /** Per trade, in scenario order: would the pool's quote reserve reach the threshold after it? null = trade could not be filled. */
+  trades: { tradeSizeUsd: number; side: "buy" | "sell"; reserveAfterUsd: number | null; percentAfter: number | null; reachesThreshold: boolean | null }[];
+  anyTradeReachesThreshold: boolean;
+}
+
+export interface LabRunParameters {
+  curveProgressFraction: number;
+  sides: ("buy" | "sell")[];
+  /** True when the user changed anything from the scenario's own definition. */
+  customised: boolean;
+}
+
+export interface LabRunResult {
+  label: "SIMULATION — OFF-CHAIN";
+  runId: string;
+  curveCandidateId: string;
+  curveLabel: string;
+  scenario: SimulationScenarioKind;
+  parameters: LabRunParameters;
+  result: SimulationScenarioResult;
+  graduation: SimulatedGraduationState | null;
+  checks: LabCheck[];
+  warnings: string[];
+  createdAt: string;
+}
+
+// --- External market context (CoinCap) ---------------------------------------
+// EXTERNAL crypto market context only. It never replaces the on-chain Meteora DBC price.
+
+/** Only fields CoinCap actually returned are numbers; anything absent or non-numeric is null (never 0). */
+export interface ExternalMarketData {
+  provider: "CoinCap";
+  assetId: string;
+  symbol: string;
+  priceUsd: number;
+  marketCapUsd: number | null;
+  volume24hUsd: number | null;
+  changePercent24h: number | null;
+  /** The provider's own timestamp (ISO 8601). */
+  timestamp: string;
+}
+
+export type ExternalMarketUnavailableReason = "not_configured" | "not_listed" | "rate_limited" | "unavailable" | "malformed";
+
+export type ExternalMarketResult =
+  | { status: "ok"; data: ExternalMarketData }
+  | { status: "unavailable"; reason: ExternalMarketUnavailableReason; message: string };
+
+export interface ExternalMarketContext {
+  marketId: string;
+  /** The market's quote token (SOL / USDC) priced by CoinCap. */
+  quote: { token: string; result: ExternalMarketResult };
+  /** The market's own asset, only when CoinCap lists an asset with the same symbol AND name. */
+  asset: { symbol: string; result: ExternalMarketResult };
+}
+
+// --- AI market analysis (Groq) -----------------------------------------------
+// Groq explains a server-built snapshot of verified ELF data. It is never a source of truth.
+
+export interface AiMarketAnalysis {
+  summary: string;
+  marketObservations: string[];
+  riskObservations: string[];
+  liquidityObservations: string[];
+  activityObservations: string[];
+  graduationObservations: string[];
+  /** Built by the server from the verified snapshot — never written by the model. */
+  evidence: string[];
+  limitations: string[];
+}
+
+export interface AiMarketAnalysisResponse {
+  status: "ok";
+  analysis: AiMarketAnalysis;
+  meta: {
+    provider: "Groq";
+    model: string;
+    generatedAt: string;
+    /** When the verified snapshot the analysis explains was taken. */
+    snapshotAt: string;
+    dataSource: string;
+    cached: boolean;
+    /** Model statements dropped because they cited a number, address or claim not in the snapshot. */
+    droppedUngrounded: number;
+  };
+}

@@ -62,6 +62,24 @@ describe("describeTradeStatus — the five distinct states", () => {
   });
 });
 
+describe("describeTradeStatus — unconfirmed (submitted, outcome unknown)", () => {
+  it("is neither success nor failure: a warning at the Submitted step, not busy, promising no resend", () => {
+    const view = describeTradeStatus("unconfirmed", true);
+    expect(view.activeStep).toBe(2); // Submitted
+    expect(view.tone).toBe("warning");
+    expect(view.busy).toBe(false);
+    expect(view.label).not.toMatch(/confirmed on-chain/i);
+    expect(view.label).not.toMatch(/failed/i);
+    expect(view.detail).toMatch(/will not send it again/);
+  });
+
+  it("only 'confirmed' is ever the success state", () => {
+    const tones = (["idle", "building", "signing", "submitted", "unconfirmed", "failed"] as const).map((s) => describeTradeStatus(s, true).tone);
+    expect(tones).not.toContain("success");
+    expect(describeTradeStatus("confirmed", true).tone).toBe("success");
+  });
+});
+
 describe("classifyTradeFailure", () => {
   it("wallet rejection is reported as such and says nothing was sent", () => {
     const f = classifyTradeFailure(new Error("User rejected the request."));

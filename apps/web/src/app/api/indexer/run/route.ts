@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { runIndexerOnce } from "@elf/indexer";
 import { prisma, expireStaleLaunchSecrets } from "@elf/db";
-import { apiError } from "@/lib/server/api-error";
-import { getServerConnection } from "@/lib/server/rpc";
+import { apiError, mapTransactionSafetyError } from "@/lib/server/api-error";
+import { getServerConnection, getServerRpcUrl } from "@/lib/server/rpc";
+import { assertExpectedNetwork } from "@/lib/server/transaction";
 
 /**
  * Constant-time Bearer-token comparison. A plain `!==` string compare
@@ -55,7 +56,11 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await runIndexerOnce(getServerConnection());
+    const connection = getServerConnection();
+    // Same genesis-hash check that gates every transaction build: an endpoint that is not really the configured
+    // cluster must not be indexed as if it were.
+    await assertExpectedNetwork(connection, getServerRpcUrl());
+    const result = await runIndexerOnce(connection);
     // LOW-5 (security remediation): piggybacks stale ephemeral-keypair
     // cleanup on this same authenticated, already-scheduled trigger,
     // rather than adding a second maintenance-only endpoint and auth
@@ -65,7 +70,9 @@ export async function POST(request: Request) {
       .then((r) => r.expiredCount)
       .catch(() => null);
     return NextResponse.json({ ...result, secretsExpired });
-  } catch {
+  } catch (error) {
+    const mapped = mapTransactionSafetyError(error);
+    if (mapped) return mapped;
     return apiError("rpc_unavailable", "The Solana RPC endpoint is temporarily unavailable.", 503);
   }
 }

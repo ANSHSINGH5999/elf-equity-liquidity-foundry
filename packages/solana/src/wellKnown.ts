@@ -13,6 +13,9 @@ export const USDC_MINT_MAINNET = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4w
  */
 export const USDC_MINT_DEVNET = new PublicKey("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU");
 
+/** The Associated Token Account program (a program, not a wallet) — used to tell whether a token account is the standard ATA. */
+export const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
+
 export type QuoteTokenSymbol = "SOL" | "USDC";
 
 /** Resolves an ELF quote-token selection to the correct mint for the active cluster. */

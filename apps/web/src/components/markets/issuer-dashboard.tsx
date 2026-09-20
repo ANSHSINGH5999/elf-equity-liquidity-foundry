@@ -6,6 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { DataFreshnessBadge } from "@/components/markets/data-freshness-badge";
 import { MarketAnalyst } from "@/components/markets/market-analyst";
+import { AiMarketAnalysis } from "@/components/markets/ai-market-analysis";
+import { MarketHealth } from "@/components/markets/market-health";
 import { RiskIndicators, formatIndicatorValue } from "@/components/markets/risk-indicators";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { formatUsd, truncateAddress } from "@/lib/utils";
@@ -87,7 +89,11 @@ export function IssuerDashboard({ marketId }: { marketId: string }) {
 
       {error && <p className="mt-4 text-sm text-negative">{error}</p>}
 
-      <h2 className="mt-8 text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Market overview</h2>
+      <div className="mt-8">
+        <MarketHealth health={data.health} />
+      </div>
+
+      <h2 className="mt-10 text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Market overview</h2>
       <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
         <Stat label="Total liquidity" value={formatUsd(o.liquidityUsd.value, { compact: true })} source={o.liquidityUsd.source} />
         <Stat label="24H volume" value={formatUsd(o.volume24hUsd.value, { compact: true })} source={o.volume24hUsd.source} />
@@ -106,6 +112,9 @@ export function IssuerDashboard({ marketId }: { marketId: string }) {
       <div className="mt-8 grid gap-4 lg:grid-cols-2">
         <RiskIndicators indicators={indicators} />
         <MarketAnalyst marketId={marketId} />
+      </div>
+      <div className="mt-4">
+        <AiMarketAnalysis marketId={marketId} />
       </div>
     </div>
   );

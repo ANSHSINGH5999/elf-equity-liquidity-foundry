@@ -27,6 +27,19 @@ export class TransactionSimulationError extends Error {
 export async function simulateBeforeSigning(connection: Connection, transaction: Transaction): Promise<void> {
   const result = await connection.simulateTransaction(transaction);
 
+  if (result.value.err === "AccountNotFound" && transaction.feePayer) {
+    // The runtime rejects a transaction whose fee payer has no account before running any
+    // instruction (no logs, 0 compute units). Confirm that against the chain instead of assuming it,
+    // so the user is told which wallet to fund rather than shown a bare "AccountNotFound".
+    const feePayerInfo = await connection.getAccountInfo(transaction.feePayer, "confirmed");
+    if (feePayerInfo === null) {
+      throw new TransactionSimulationError(
+        `Transaction simulation failed: AccountNotFound — the fee payer ${transaction.feePayer.toBase58()} has no account on this network (it has never received SOL here). Fund that wallet on this network, or connect a funded wallet, and try again.`,
+        result.value.logs,
+      );
+    }
+  }
+
   if (result.value.err) {
     throw new TransactionSimulationError(
       `Transaction simulation failed: ${JSON.stringify(result.value.err)}`,

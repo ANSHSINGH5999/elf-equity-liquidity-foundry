@@ -222,10 +222,16 @@ circulating supply on-chain. "Migration executed" comes from real pool state
 - `minimumReceived` = expected output × (1 − slippage bps ÷ 10,000) — the same
   floor the swap route sets as `minimumAmountOut`.
 - `checkSufficientBalance` never treats an unreadable balance as zero.
-- A trade is **Confirmed** only after `confirmTransaction` returns with no
-  on-chain `err`. (`confirmTransaction` *resolves* — it does not throw — for a
-  transaction that landed but failed, so the error field is checked
-  explicitly and surfaces as Failed with the real signature.)
+- A trade is **Confirmed** only when `getSignatureStatuses` reports it at
+  `confirmed` or `finalized` with `err === null` (HTTP polling — see
+  `packages/solana/src/confirmation.ts`; it does not use WebSocket
+  subscriptions, which some providers such as Alchemy do not support). A
+  transaction that landed but failed surfaces as Failed with the cluster's own
+  error and the real signature; one whose blockhash expired and that nothing
+  found (status incl. history, then `getTransaction`) is Failed/expired; one
+  whose outcome ELF could not learn (timeout, RPC unreachable) is
+  **Unconfirmed**: it keeps its signature, offers "Check status again", and is
+  never sent a second time.
 
 ### Market analyst (`analyst.ts`)
 
@@ -234,9 +240,20 @@ It is **not** a language model and says so in the UI (provider label
 `elf-rule-based-v1`). Every sentence is built from a real value, every claim
 lists its data source, missing data is named ("Could not be measured"), and the
 exact inputs are shown under "Data used". A `MarketAnalystProvider` interface
-allows an LLM provider later; **every** provider's output is checked by
+allows an LLM provider; **every** provider's output is checked by
 `findAdviceViolations` (advice, buy/sell/hold ratings, price predictions,
 guarantees) and flagged output is discarded — never shown.
+
+### AI Market Analysis (`aiMarketAnalysis.ts`, Groq)
+
+Separate from the rule-based analyst above. `buildVerifiedSnapshot` turns the
+issuer dashboard plus the all-time BUY/SELL trade counts into a snapshot of
+numbers and enums; Groq explains it; `explainSnapshot` keeps only statements whose
+every digit matches the snapshot (within the precision written), that contain no
+advice/prediction language and no addresses or links. `buildEvidence` writes the
+evidence list from the snapshot — the model never does. The response carries
+`meta` (provider, model, generation time, snapshot time, data source, cached,
+number of dropped statements).
 
 ## Known limitations
 

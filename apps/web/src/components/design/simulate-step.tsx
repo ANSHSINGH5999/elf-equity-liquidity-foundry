@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { formatUsd, formatBps } from "@/lib/utils";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import type { CurveConfigDto, SimulationRunDto } from "@/lib/api-types";
+import { PRICE_IMPACT_WATCH_BPS } from "@elf/shared";
 
 const SCENARIO_LABELS: Record<string, string> = {
   normal_demand: "Normal demand",
@@ -46,7 +48,7 @@ export function SimulateStep({ candidate, onComplete }: { candidate: CurveConfig
           <CardTitle className="font-display text-xl font-normal">Step 4 — Simulation</CardTitle>
           <CardDescription>
             Six demand scenarios, four trade sizes each, run against the real Meteora curve math for {candidate.label}. Every
-            figure below is <Badge variant="warning">SIMULATED</Badge> — never live market data.
+            figure below is <Badge variant="warning">SIMULATED</Badge> — never live market data. Simulation — no blockchain transaction is executed.
           </CardDescription>
         </div>
       </CardHeader>
@@ -67,7 +69,7 @@ export function SimulateStep({ candidate, onComplete }: { candidate: CurveConfig
                     <p className="text-sm font-medium text-foreground">{SCENARIO_LABELS[scenario.scenario] ?? scenario.scenario}</p>
                     <p className="text-xs text-muted-foreground">{scenario.description}</p>
                   </div>
-                  <Badge variant={scenario.worstCasePriceImpactBps > 500 ? "negative" : "neutral"}>
+                  <Badge variant={scenario.worstCasePriceImpactBps > PRICE_IMPACT_WATCH_BPS ? "negative" : "neutral"}>
                     worst impact {formatBps(scenario.worstCasePriceImpactBps)}
                   </Badge>
                 </div>
@@ -100,7 +102,15 @@ export function SimulateStep({ candidate, onComplete }: { candidate: CurveConfig
               </div>
             ))}
 
-            <Button onClick={onComplete}>Review configuration for deployment</Button>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button onClick={onComplete}>Review configuration for deployment</Button>
+              <Link
+                href={`/design/lab?curve=${encodeURIComponent(candidate.id)}`}
+                className="text-xs text-accent-strong hover:underline"
+              >
+                Open in Simulation Lab — adjust the scenario and compare →
+              </Link>
+            </div>
           </div>
         )}
       </CardContent>

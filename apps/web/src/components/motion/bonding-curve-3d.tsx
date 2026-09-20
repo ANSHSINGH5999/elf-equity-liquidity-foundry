@@ -29,7 +29,7 @@ function DynamicCurveModel({ preset = "balanced" }: { preset?: "conservative" | 
   const curve = React.useMemo(() => new THREE.CatmullRomCurve3(points), [points]);
   const tubeGeometry = React.useMemo(() => new THREE.TubeGeometry(curve, 64, 0.045, 12, false), [curve]);
 
-  useFrame((state, delta) => {
+  useFrame((state) => {
     if (!groupRef.current) return;
     // Smooth idle tilt
     groupRef.current.rotation.y = THREE.MathUtils.lerp(

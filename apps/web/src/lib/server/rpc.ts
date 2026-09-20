@@ -1,13 +1,12 @@
 import "server-only";
-import { createConnection } from "@elf/solana";
+import { PUBLIC_DEVNET_RPC_URL, createConnection } from "@elf/solana";
 import type { Connection } from "@solana/web3.js";
 
-/** Server-only RPC connection. Reads SOLANA_RPC_URL, which may embed an API key. */
-export function getServerConnection(): Connection {
-  const rpcUrl = process.env.SOLANA_RPC_URL ?? "https://api.devnet.solana.com";
-  return createConnection(rpcUrl, "confirmed");
+/** The one server-side RPC URL: SOLANA_RPC_URL (may embed an API key), else the public devnet endpoint. */
+export function getServerRpcUrl(): string {
+  return process.env.SOLANA_RPC_URL || PUBLIC_DEVNET_RPC_URL;
 }
 
-export function getServerRpcUrl(): string {
-  return process.env.SOLANA_RPC_URL ?? "https://api.devnet.solana.com";
+export function getServerConnection(): Connection {
+  return createConnection(getServerRpcUrl(), "confirmed");
 }

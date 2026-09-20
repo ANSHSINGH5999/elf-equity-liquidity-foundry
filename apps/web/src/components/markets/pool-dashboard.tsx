@@ -114,7 +114,7 @@ export function PoolDashboard({ poolAddress }: { poolAddress: string }) {
             </Card>
 
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <Metric label="24h volume" value={formatUsd(analytics.volume24hUsd, { compact: true })} />
+              <Metric label="24h volume (est. from reserve moves)" value={formatUsd(analytics.volume24hUsd, { compact: true })} />
               <Metric label="Liquidity" value={formatUsd(analytics.liquidityUsd, { compact: true })} />
               <Metric label="Quote reserve" value={formatUsd(analytics.quoteReserveUsd, { compact: true })} />
               <Metric label="Base reserve" value={analytics.baseReserveTokens.toLocaleString("en-US", { maximumFractionDigits: 0 })} />

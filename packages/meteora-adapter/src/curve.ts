@@ -37,6 +37,24 @@ function resolveMigrationFeeOption(bps: number): MigrationFeeOption {
  * in the codebase that maps ELF semantics onto Meteora SDK enums — every
  * other package works with @elf/shared types only.
  */
+/**
+ * Fraction of the total supply the curve deliberately leaves unallocated
+ * (`leftover`, withdrawable by the config's leftoverReceiver after migration).
+ *
+ * The SDK sizes the curve to fill the supply exactly, i.e. swap-with-buffer +
+ * migration amounts equal `preMigrationTokenSupply` with zero slack. The deployed
+ * DBC program computes that minimum slightly higher (verified on devnet by
+ * simulating createConfig: `leftover = 0` is rejected with InvalidTokenSupply
+ * (6020) at every supply from 1M to 2B tokens, for both deployable candidates;
+ * 1e-9 of the supply passes everywhere tested). One part per billion is ~1000x
+ * the observed shortfall and far below anything a holder could notice.
+ */
+export const SUPPLY_LEFTOVER_FRACTION = 1e-9;
+
+export function supplyLeftoverTokens(totalTokenSupply: number): number {
+  return Number((totalTokenSupply * SUPPLY_LEFTOVER_FRACTION).toFixed(9));
+}
+
 export async function candidateToBuildCurveParams(
   candidate: CurveCandidate,
   profile: MarketProfile,
@@ -51,7 +69,7 @@ export async function candidateToBuildCurveParams(
       tokenQuoteDecimal,
       tokenAuthorityOption: TokenAuthorityOption.Immutable,
       totalTokenSupply: candidate.tokenSupply,
-      leftover: 0,
+      leftover: supplyLeftoverTokens(candidate.tokenSupply),
     },
     fee: {
       baseFeeParams: {

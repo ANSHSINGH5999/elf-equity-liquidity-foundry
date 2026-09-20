@@ -8,8 +8,8 @@ const badgeVariants = cva(
     variants: {
       variant: {
         neutral: "bg-surface-elevated text-muted-foreground border border-border-strong",
-        accent: "bg-accent-muted text-accent-strong border border-accent/25 shadow-[0_0_12px_-2px_rgba(99,102,241,0.2)]",
-        gold: "bg-amber-500/10 text-gold-light border border-amber-500/30 shadow-[0_0_12px_-2px_rgba(201,162,39,0.25)]",
+        accent: "bg-accent-muted text-accent-strong border border-accent/25 shadow-[0_0_12px_-2px_rgba(159,224,255,0.22)]",
+        gold: "bg-[#ffe2b2]/10 text-gold-light border border-[#ffe2b2]/30 shadow-[0_0_12px_-2px_rgba(255,226,178,0.25)]",
         positive: "bg-positive-muted text-positive border border-positive/30",
         negative: "bg-negative-muted text-negative border border-negative/30",
         warning: "bg-warning-muted text-warning border border-warning/30",

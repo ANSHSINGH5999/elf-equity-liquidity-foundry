@@ -20,8 +20,8 @@ import { RISK_PRESETS, VOLATILITY_MULTIPLIER, type RiskPreset } from "./presets"
  * live devnet simulation, not just theoretical. 1,000,000 gives comfortable
  * headroom above that failure point.
  */
-const MIN_TOKEN_SUPPLY = 1_000_000;
-const MAX_TOKEN_SUPPLY = 10_000_000_000;
+export const MIN_TOKEN_SUPPLY = 1_000_000;
+export const MAX_TOKEN_SUPPLY = 10_000_000_000;
 
 function clamp(value: number, min = 0, max = 100): number {
   return Math.min(max, Math.max(min, value));

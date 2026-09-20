@@ -75,6 +75,15 @@ describe("classifyRegime", () => {
     ).toBe("discovery");
   });
 
+  it("does not call a brand-new, thin pool stressed or recovering — it is still in discovery", () => {
+    // Real values from a fresh Devnet pool: quality 20, 0% to graduation, flat price, two small buys.
+    const fresh = { graduationPercentageComplete: 0, marketQualityTotal: 20, priceVolatility: 0 };
+    expect(classifyRegime({ ...fresh, volume24hUsd: 2 })).toBe("discovery");
+    expect(classifyRegime({ ...fresh, volume24hUsd: 0 })).toBe("discovery");
+    // ...but genuine price instability early on is still stress.
+    expect(classifyRegime({ ...fresh, priceVolatility: 0.3, volume24hUsd: 2 })).toBe("stressed");
+  });
+
   it("classifies everything else as healthy", () => {
     expect(
       classifyRegime({

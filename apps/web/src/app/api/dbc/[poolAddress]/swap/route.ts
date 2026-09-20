@@ -11,7 +11,7 @@ import {
 } from "@elf/meteora-adapter";
 import type { QuoteToken } from "@elf/shared";
 import { parsePublicKeyOrThrow } from "@elf/solana";
-import { apiError, logUnhandledRouteError, mapTransactionSafetyError } from "@/lib/server/api-error";
+import { apiError, logUnhandledRouteError, mapInsufficientLiquidity, mapTransactionSafetyError } from "@/lib/server/api-error";
 import { getServerConnection, getServerRpcUrl } from "@/lib/server/rpc";
 import { assertExpectedNetwork, prepareForWalletSignature } from "@/lib/server/transaction";
 import { checkRateLimit, clientKeyFromRequest } from "@/lib/server/rate-limit";
@@ -95,6 +95,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ poo
   } catch (error) {
     const mapped = mapTransactionSafetyError(error);
     if (mapped) return mapped;
+    const insufficient = mapInsufficientLiquidity(error);
+    if (insufficient) return insufficient;
     if (error instanceof QuotePriceUnavailableError) {
       return apiError("provider_unavailable", error.message, 503);
     }

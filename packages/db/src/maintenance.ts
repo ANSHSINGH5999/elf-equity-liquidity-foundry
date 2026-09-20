@@ -61,3 +61,11 @@ export async function expireStaleLaunchSecrets(
 
   return { expiredCount: result.count };
 }
+
+/**
+ * Records that a launch's pool is live on-chain and discards the ephemeral base-mint keypair, which has no further
+ * use once the pool exists. Callers must have verified the pool against the chain first.
+ */
+export async function markLaunchLive(prisma: PrismaClient, launchId: string): Promise<void> {
+  await prisma.launch.update({ where: { id: launchId }, data: { stage: "LIVE", status: "live", baseMintKeypairSecret: null } });
+}

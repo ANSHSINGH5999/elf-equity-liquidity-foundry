@@ -99,7 +99,7 @@ export function CurveComparison() {
         <div className="lg:col-span-7">
           <svg
             viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-            className="w-full rounded-xl border border-white/5 bg-[#080b12]"
+            className="w-full rounded-xl border border-white/5 bg-[rgba(6,12,22,0.55)]"
             role="img"
             aria-label="Illustrative comparison of a naive bonding curve versus a compiled Meteora Dynamic Bonding Curve"
           >
@@ -148,14 +148,14 @@ export function CurveComparison() {
 
         <div className="flex flex-col gap-4 lg:col-span-5">
           {DIFFERENTIATORS.map((d) => (
-            <div key={d.label} className="rounded-xl border border-white/5 bg-[#080b12]/80 p-3.5">
+            <div key={d.label} className="rounded-xl border border-white/5 bg-[rgba(6,12,22,0.5)] p-3.5">
               <div className="text-xs font-semibold text-white">{d.label}</div>
               <div className="mt-1.5 flex gap-2 text-[11px] leading-relaxed text-muted-foreground">
                 <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-red-500/70" />
                 <span>{d.naive}</span>
               </div>
               <div className="mt-1.5 flex gap-2 text-[11px] leading-relaxed text-foreground/90">
-                <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
+                <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#ffe2b2]" />
                 <span>{d.dbc}</span>
               </div>
             </div>

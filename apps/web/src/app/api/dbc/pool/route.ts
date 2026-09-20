@@ -117,6 +117,21 @@ export async function POST(request: Request) {
       const quoteDecimals = launch.marketProfile.quoteToken === "SOL" ? 9 : 6;
       const quoteAmount = parsed.data.firstBuyUsd / quoteUsdPrice;
       firstBuyLamports = new BN(Math.round(quoteAmount * 10 ** quoteDecimals));
+
+      // The first buy spends the buyer's own quote token. SOL is wrapped from lamports by the SDK; an SPL quote
+      // (USDC) must already be in the wallet, otherwise the swap fails on-chain with a bare "insufficient funds".
+      if (launch.marketProfile.quoteToken !== "SOL") {
+        const held = await connection.getParsedTokenAccountsByOwner(poolCreator, { mint: quoteMint });
+        const balance = held.value.reduce((sum, a) => sum + BigInt(a.account.data.parsed.info.tokenAmount.amount), BigInt(0));
+        if (balance < BigInt(firstBuyLamports.toString())) {
+          const have = Number(balance) / 10 ** quoteDecimals;
+          return apiError(
+            "validation_error",
+            `The first buy needs ${quoteAmount.toFixed(quoteDecimals)} ${launch.marketProfile.quoteToken} (mint ${quoteMint.toBase58()}) in the wallet that creates the pool, but that wallet holds ${have}. Fund it with that token on this network, or set the first buy to 0 (you can buy after the pool is live).`,
+            400,
+          );
+        }
+      }
     }
 
     // Resume with the SAME base-mint keypair if a prior attempt already built one.

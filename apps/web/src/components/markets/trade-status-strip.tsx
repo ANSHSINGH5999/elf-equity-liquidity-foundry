@@ -32,7 +32,7 @@ export function TradeStatusStrip({ view }: { view: TradeStatusView }) {
       <p
         className={cn(
           "mt-2 text-xs font-medium",
-          view.tone === "success" ? "text-positive" : view.tone === "danger" ? "text-negative" : view.tone === "progress" ? "text-accent-strong" : "text-muted-foreground",
+          view.tone === "success" ? "text-positive" : view.tone === "danger" ? "text-negative" : view.tone === "warning" ? "text-warning" : view.tone === "progress" ? "text-accent-strong" : "text-muted-foreground",
         )}
         role="status"
         aria-live="polite"

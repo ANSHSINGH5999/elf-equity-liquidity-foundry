@@ -60,6 +60,15 @@ export function isPrismaConnectionError(error: unknown): boolean {
 }
 
 /**
+ * The DBC SDK throws "Insufficient Liquidity" when a sell asks for more quote token than the pool's reserve can pay
+ * (a brand-new pool has a quote reserve of 0). That is a property of the pool and the amount — not an RPC failure.
+ */
+export function mapInsufficientLiquidity(error: unknown) {
+  if (!(error instanceof Error) || !/insufficient liquidity/i.test(error.message)) return null;
+  return apiError("validation_error", "The pool does not hold enough quote-token liquidity to pay for this trade at this size. Try a smaller amount.", 422);
+}
+
+/**
  * Maps the transaction-safety errors introduced in ELF V1 Phase 2
  * (network validation, account-ownership validation, simulation) to a
  * response, or returns `null` if `error` isn't one of them so the caller

@@ -121,7 +121,7 @@ export function AssetExplorer() {
                           </div>
                           <div className="flex items-center justify-between">
                             <span className="font-tabular text-lg text-foreground">{formatUsd(asset.referencePriceUsd)}</span>
-                            <Link href="/design" className="text-xs font-medium text-accent-strong hover:underline">
+                            <Link href={provider === "prestocks" ? `/design?asset=${encodeURIComponent(asset.mintAddress)}` : "/design"} className="text-xs font-medium text-accent-strong hover:underline">
                               Design a market →
                             </Link>
                           </div>

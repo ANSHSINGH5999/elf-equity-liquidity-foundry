@@ -44,7 +44,7 @@ export function LiquidityChart({ data }: { data: LiquidityPoint[] }) {
         />
         <Tooltip
           contentStyle={{
-            background: "#0c101a",
+            background: "rgba(6,12,22,0.94)",
             border: "1px solid rgba(255,255,255,0.12)",
             borderRadius: 10,
             fontSize: 12,

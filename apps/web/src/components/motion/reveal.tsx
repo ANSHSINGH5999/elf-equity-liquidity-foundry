@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { motion, useReducedMotion, useSpring, useTransform, useMotionValue, type Variants } from "framer-motion";
+import { motion, useReducedMotion, useSpring, useMotionValue, type Variants } from "framer-motion";
 
 export const EASE_PREMIUM = [0.16, 1, 0.3, 1] as const;
 

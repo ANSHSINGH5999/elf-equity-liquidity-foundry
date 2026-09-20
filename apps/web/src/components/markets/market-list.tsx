@@ -79,7 +79,7 @@ export function MarketList() {
 
         <Link
           href="/design"
-          className="inline-flex items-center gap-2 rounded-lg border border-amber-400/40 bg-[#161208] px-4 py-2 text-xs font-semibold text-gold-light transition-all hover:bg-[#201a0a] hover:shadow-[0_0_15px_rgba(201,162,39,0.3)]"
+          className="inline-flex items-center gap-2 rounded-full border border-[#ffe2b2]/45 bg-[rgba(255,226,178,0.08)] px-5 py-2 text-xs font-semibold text-gold-light transition-all hover:bg-[rgba(255,226,178,0.16)] hover:shadow-[0_0_15px_rgba(255,226,178,0.3)]"
         >
           <span>⚡ Launch New Market</span>
         </Link>
@@ -92,7 +92,7 @@ export function MarketList() {
             onClick={() => setFilter(f.key)}
             className={`rounded-full border px-3.5 py-1 text-xs font-medium transition-all ${
               filter === f.key
-                ? "border-amber-400/60 bg-amber-400/10 text-gold-light shadow-sm"
+                ? "border-[#ffe2b2]/60 bg-[#ffe2b2]/10 text-gold-light shadow-sm"
                 : "border-white/10 text-muted-foreground hover:border-white/20 hover:text-white"
             }`}
           >
@@ -108,7 +108,7 @@ export function MarketList() {
         </div>
       )}
       {pools && filtered.length === 0 && (
-        <div className="mt-12 rounded-xl border border-white/5 bg-[#0c101a] p-8 text-center text-sm text-muted-foreground">
+        <div className="mt-12 rounded-xl border border-white/5 bg-[rgba(6,12,22,0.66)] backdrop-blur-xl p-8 text-center text-sm text-muted-foreground">
           No markets match this filter yet.
         </div>
       )}
@@ -116,7 +116,7 @@ export function MarketList() {
       <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {filtered.map(({ launch, analytics }) => (
           <Link key={launch.id} href={`/markets/${launch.id}`} className="group">
-            <Card className="h-full border border-white/10 bg-[#0c101a] transition-all duration-[var(--duration-base)] hover:-translate-y-1 hover:border-amber-400/40 hover:shadow-[0_12px_30px_rgba(0,0,0,0.6)]">
+            <Card className="h-full border border-white/10 bg-[rgba(6,12,22,0.66)] backdrop-blur-xl transition-all duration-[var(--duration-base)] hover:-translate-y-1 hover:border-[#ffe2b2]/45 hover:shadow-[0_12px_30px_rgba(0,0,0,0.6)]">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>

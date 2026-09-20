@@ -6,9 +6,9 @@ import {
   getOnchainSwapQuote,
   getQuoteUsdPrice,
 } from "@elf/meteora-adapter";
-import { parsePublicKeyOrThrow } from "@elf/solana";
+import { classifyRpcError, parsePublicKeyOrThrow } from "@elf/solana";
 import type { QuoteToken } from "@elf/shared";
-import { apiError } from "@/lib/server/api-error";
+import { apiError, logUnhandledRouteError, mapInsufficientLiquidity } from "@/lib/server/api-error";
 import { getServerConnection } from "@/lib/server/rpc";
 import { checkRateLimit, clientKeyFromRequest } from "@/lib/server/rate-limit";
 
@@ -26,7 +26,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ pool
 
   const { poolAddress } = await params;
   const url = new URL(request.url);
-  const side = url.searchParams.get("side") === "sell" ? "sell" : "buy";
+  const sideParam = url.searchParams.get("side") ?? "buy";
+  if (sideParam !== "buy" && sideParam !== "sell") return apiError("validation_error", "side must be buy or sell.", 400);
+  const side = sideParam;
   const tokensParam = url.searchParams.get("amountTokens");
   const amountTokens = tokensParam === null ? undefined : Number(tokensParam);
   const amountUsd = amountTokens === undefined ? Number(url.searchParams.get("amountUsd") ?? "1000") : undefined;
@@ -95,7 +97,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ pool
       tradingFee: quote.tradingFee.toString(),
       nextSqrtPrice: quote.nextSqrtPrice.toString(),
     });
-  } catch {
-    return apiError("rpc_unavailable", "The Solana RPC endpoint is temporarily unavailable.", 503);
+  } catch (error) {
+    const insufficient = mapInsufficientLiquidity(error);
+    if (insufficient) return insufficient;
+    if (classifyRpcError(error) === "rate_limited") return apiError("rpc_unavailable", "The Solana RPC is rate limiting requests. Try again in a moment.", 503);
+    if (error instanceof Error && /fetch failed|ECONN|ETIMEDOUT|timed? ?out|network|50[234]/i.test(error.message)) {
+      return apiError("rpc_unavailable", "The Solana RPC endpoint is temporarily unavailable.", 503);
+    }
+    logUnhandledRouteError("GET /api/dbc/[poolAddress]/quote", error);
+    return apiError("internal_error", "Failed to compute the quote.", 500);
   }
 }

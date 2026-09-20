@@ -4,16 +4,21 @@ import { useEffect, useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { Transaction } from "@solana/web3.js";
 import { checkSufficientBalance } from "@elf/market-engine";
-import { explorerTxUrl } from "@elf/solana";
+import { explorerTxUrl, type ConfirmationProgress } from "@elf/solana";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TradePreview, type QuoteStatus, type TradeQuote } from "@/components/markets/trade-preview";
+import { TradeReadiness } from "@/components/markets/trade-readiness";
 import { TradeStatusStrip } from "@/components/markets/trade-status-strip";
-import { TradeOnChainFailure, classifyTradeFailure, describeTradeStatus, type TradeFailure, type TradeStatus } from "@/components/markets/trade-state";
+import { classifyTradeFailure, describeBalance, describeTradeStatus, type TradeFailure, type TradeStatus } from "@/components/markets/trade-state";
 import { useWalletBalances } from "@/components/markets/use-wallet-balances";
 import { apiFetch } from "@/lib/api-client";
+import { interpretConfirmation } from "@/lib/confirmation-view";
+import { checkStatusAgain, submitAndConfirm } from "@/lib/submit-transaction";
+import { useClusterSigner } from "@/components/providers/use-cluster-signer";
+import { NetworkGuardBanner } from "@/components/layout/network-guard-banner";
 import { CLUSTER } from "@/lib/solana-config";
 
 type TradeSide = "buy" | "sell";
@@ -48,7 +53,8 @@ export function TradePanel({
   onTradeConfirmed?: () => void;
 }) {
   const { connection } = useConnection();
-  const { publicKey, signTransaction } = useWallet();
+  const { publicKey } = useWallet();
+  const clusterSigner = useClusterSigner();
 
   const [side, setSide] = useState<TradeSide>("buy");
   const [amounts, setAmounts] = useState<Record<TradeSide, string>>({ buy: "100", sell: "" });
@@ -63,6 +69,12 @@ export function TradePanel({
   const [failure, setFailure] = useState<TradeFailure | null>(null);
   const [signature, setSignature] = useState<string | null>(null);
   const [networkFeeSol, setNetworkFeeSol] = useState<number | null>(null);
+  // A submitted transaction whose outcome ELF could not learn. While one exists, no new trade may be started: a second
+  // swap would be a duplicate if the first landed. Only a look-up ("Check status again") can resolve it.
+  const [unresolved, setUnresolved] = useState<{ signature: string; lastValidBlockHeight: number } | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [progressNote, setProgressNote] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
 
   const balances = useWalletBalances(pool?.baseMint ?? null, pool?.quoteMint ?? null);
 
@@ -119,14 +131,63 @@ export function TradePanel({
   const insufficient = balanceCheck?.state === "insufficient";
   const inputSymbol = side === "buy" ? (currentQuote?.quoteToken ?? "quote token") : tokenSymbol;
 
-  const canTrade = Boolean(publicKey && signTransaction) && amountValid && currentQuote !== null && !insufficient && !view.busy;
+  const canTrade = Boolean(publicKey) && !clusterSigner.blocked && amountValid && currentQuote !== null && !insufficient && !view.busy && unresolved === null;
+
+  function noteProgress(p: ConfirmationProgress) {
+    setProgressNote(
+      p.phase === "processed"
+        ? "Seen by the network — waiting for confirmation…"
+        : p.phase === "rpc_retry"
+          ? p.error === "rate_limited"
+            ? "The RPC is rate limiting requests — still checking. ELF will not resend."
+            : "Having trouble reaching the RPC — still checking. ELF will not resend."
+          : null,
+    );
+  }
+
+  /** The single place a confirmation result becomes UI state. Only the chain's word makes a trade Confirmed or Failed. */
+  function applyOutcome(sig: string, lastValidBlockHeight: number, outcome: Parameters<typeof interpretConfirmation>[0]) {
+    const result = interpretConfirmation(outcome);
+    setProgressNote(null);
+    if (result.kind === "confirmed") {
+      setUnresolved(null);
+      setNotice(null);
+      setFailure(null);
+      setStatus("confirmed");
+      balances.refresh();
+      onTradeConfirmed?.();
+    } else if (result.kind === "failed") {
+      setUnresolved(null);
+      setNotice(null);
+      setFailure({ kind: result.reason === "expired" ? "expired" : "on_chain_failed", message: result.message, signature: sig });
+      setFailedAtStep(2);
+      setStatus("failed");
+    } else {
+      setUnresolved({ signature: sig, lastValidBlockHeight });
+      setFailure(null);
+      setNotice(result.message);
+      setStatus("unconfirmed");
+    }
+  }
+
+  async function checkAgain() {
+    if (!unresolved || checking) return;
+    setChecking(true);
+    try {
+      applyOutcome(unresolved.signature, unresolved.lastValidBlockHeight, await checkStatusAgain(connection, unresolved.signature, unresolved.lastValidBlockHeight, { onProgress: noteProgress }));
+    } finally {
+      setChecking(false);
+    }
+  }
 
   async function trade() {
-    if (!publicKey || !signTransaction || !amountValid) return;
+    if (!publicKey || clusterSigner.blocked || !amountValid || unresolved) return;
 
     setFailure(null);
     setSignature(null);
     setNetworkFeeSol(null);
+    setNotice(null);
+    setProgressNote(null);
     let failedStep = 1;
     setStatus("building");
 
@@ -150,23 +211,20 @@ export function TradePanel({
       }
 
       setStatus("signing");
-      const signed = await signTransaction(transaction);
+      const signed = await clusterSigner.sign(transaction); // signs for ELF's configured cluster, or refuses on a network mismatch
 
       failedStep = 2;
-      const sig = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: false });
-      setSignature(sig);
-      setStatus("submitted");
-
-      const confirmation = await connection.confirmTransaction(
-        { signature: sig, blockhash: transaction.recentBlockhash!, lastValidBlockHeight: result.lastValidBlockHeight },
-        "confirmed",
-      );
-      // confirmTransaction resolves (does not throw) for a transaction that landed but FAILED.
-      if (confirmation.value.err) throw new TradeOnChainFailure(sig, confirmation.value.err);
-
-      setStatus("confirmed");
-      balances.refresh();
-      onTradeConfirmed?.();
+      // Sent exactly once; from here on the transaction is only ever looked up by its signature (HTTP polling — the RPC's
+      // WebSocket subscriptions are not relied on), bounded by its lastValidBlockHeight and a hard time limit.
+      const { signature: sig, outcome } = await submitAndConfirm(connection, signed, {
+        lastValidBlockHeight: result.lastValidBlockHeight,
+        onSubmitted: (s) => {
+          setSignature(s);
+          setStatus("submitted");
+        },
+        onProgress: noteProgress,
+      });
+      applyOutcome(sig, result.lastValidBlockHeight, outcome);
     } catch (err) {
       const classified = classifyTradeFailure(err);
       setFailure(classified);
@@ -242,6 +300,10 @@ export function TradePanel({
           </div>
         </fieldset>
 
+        <NetworkGuardBanner assessment={clusterSigner.assessment} cluster={CLUSTER} walletName={clusterSigner.walletName} canSwitch={clusterSigner.canSwitch} onSwitch={clusterSigner.switchNetwork} />
+
+        <TradeReadiness poolAddress={poolAddress} wallet={publicKey?.toBase58() ?? null} side={side} amount={amountValid ? amount : 0} walletName={clusterSigner.walletName ?? "Wallet"} assessment={clusterSigner.assessment} />
+
         <TradePreview quote={currentQuote} quoteStatus={quoteStatus} tokenSymbol={tokenSymbol} slippageBps={slippageBps} networkFeeSol={networkFeeSol} />
 
         {insufficient && balanceCheck?.state === "insufficient" && (
@@ -268,9 +330,20 @@ export function TradePanel({
 
         <TradeStatusStrip view={view} />
 
+        {progressNote && (view.busy || status === "unconfirmed") && <p className="text-[11px] leading-relaxed text-muted-foreground" aria-live="polite">{progressNote}</p>}
+
+        {status === "unconfirmed" && unresolved && (
+          <div className="space-y-2.5 rounded-[var(--radius-sm)] border border-warning/30 bg-warning-muted px-3 py-2.5" role="status">
+            {notice && <p className="text-xs leading-relaxed text-warning">{notice}</p>}
+            <Button type="button" variant="secondary" size="sm" disabled={checking} onClick={checkAgain}>
+              {checking ? "Checking…" : "Check status again"}
+            </Button>
+          </div>
+        )}
+
         {failure && (
           <p className="text-xs leading-relaxed text-negative" role="alert">
-            {failure.message}
+            <span className="whitespace-pre-line">{failure.message}</span>
           </p>
         )}
         {signature && (
@@ -298,13 +371,16 @@ function BalanceLine({
 }) {
   if (status === "disconnected") return <>Wallet not connected — balances unavailable.</>;
   if (status === "loading") return <>Reading wallet balances…</>;
-  if (status === "error") return <>Wallet balances unavailable (RPC read failed).</>;
+  const why = balances.problem === "rate_limited" ? "RPC rate limited" : "RPC temporarily unavailable";
+  if (status === "error") return <>Wallet balances unavailable — {why}. This is not a zero balance.</>;
 
-  const fmt = (n: number | null, symbol: string) => (n === null ? `${symbol} balance unavailable` : `${n.toLocaleString("en-US", { maximumFractionDigits: 6 })} ${symbol}`);
-  const primary = side === "buy" ? fmt(balances.quote, quoteToken ?? "quote token") : fmt(balances.base, tokenSymbol);
+  const primary =
+    side === "buy"
+      ? describeBalance({ value: balances.quote, accountExists: balances.quoteAccountExists, problem: balances.problem, symbol: quoteToken ?? "quote token" })
+      : describeBalance({ value: balances.base, accountExists: balances.baseAccountExists, problem: balances.problem, symbol: tokenSymbol });
   return (
     <>
-      Balance: <span className="font-tabular text-foreground">{primary}</span>
+      Balance: <span className="font-tabular text-foreground">{primary.text}</span>
       {balances.sol !== null && <span> · {balances.sol.toLocaleString("en-US", { maximumFractionDigits: 4 })} SOL for fees</span>}
     </>
   );

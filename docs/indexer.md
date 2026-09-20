@@ -65,13 +65,17 @@ This indexer has no required infrastructure of its own — it's a
 function (`runIndexerOnce`) callable from either:
 
 1. **A scheduled HTTP route** (`POST /api/indexer/run`, protected by
-   `INDEXER_SECRET`) — wire a Vercel Cron job (or any external scheduler)
-   to call it periodically. Fits a Vercel-only deployment with no extra
-   service.
-2. **A standalone process** (`packages/indexer/src/cli.ts`, run via
-   `pnpm --filter @elf/indexer run-once`) — wire this into a loop on a
-   long-running host (Railway/Render), for lower latency than a cron
-   interval allows.
+   `INDEXER_SECRET`) — call it periodically from any scheduler that can send a
+   `POST` with `Authorization: Bearer $INDEXER_SECRET` (a GitHub Actions cron with `curl`, an
+   external cron service, a small worker, ...). **Vercel Cron cannot call it as written**:
+   the route exports `POST` only and Vercel Cron sends `GET`. With `INDEXER_SECRET` empty the route is
+   open in local development only; in production it fails closed (HTTP 500). For a manual run:
+   `curl -X POST http://localhost:3000/api/indexer/run -H "Authorization: Bearer $INDEXER_SECRET"`.
+2. **A standalone process** (`packages/indexer/src/cli.ts`, `pnpm --filter @elf/indexer run-once`).
+   **Known issue:** this script runs the TypeScript directly with `node --experimental-strip-types`,
+   which cannot resolve the repository's extensionless imports, so it currently fails with
+   `ERR_MODULE_NOT_FOUND`. Use the HTTP route above (or run the CLI through a TypeScript runner
+   that resolves them) until the script is fixed.
 
 Both call the same `runIndexerOnce` — there is no logic duplicated
 between them.

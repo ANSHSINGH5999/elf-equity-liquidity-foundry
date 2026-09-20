@@ -87,8 +87,14 @@ of the swap math itself, and is disclosed as such in code comments. A
 trade that would require more depth than remains between the scenario's
 position and the curve's edge is reported as a maximal-impact,
 "unfillable" result rather than crashing — genuine, useful information
-about thin liquidity, most visible in the `low_liquidity` and
-`normal_demand` (very early) scenarios.
+about thin liquidity, most visible in the `low_liquidity` scenario (e.g. a
+large sell against a thin reserve).
+
+Quotes are computed with the SDK's `swapQuote2` against the ORIGINAL config and
+a virtual pool positioned at the scenario price (with its real quote reserve
+from `getQuoteReserveFromNextSqrtPrice`). An earlier version repositioned the
+config's `sqrtStartPrice` instead, which made the scenario price the curve
+floor and so made every sell unfillable; buy results are unchanged by the fix.
 
 ## Market regimes are analytics, not control
 

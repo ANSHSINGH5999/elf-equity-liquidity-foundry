@@ -4,16 +4,21 @@ import {
   buildGraduationChecklist,
   computeAbsoluteChange,
   computeRiskIndicators,
+  evaluateMarketHealth,
+  HEALTH_THRESHOLDS,
   computePercentChange,
   computeVolatility,
   explainMarketQualityScore,
+  type HealthTradeTotals,
 } from "@elf/market-engine";
+import { INDEXER_DELAYED_AFTER_SECONDS } from "@elf/shared";
 import type {
   AnalyticsPeriod,
   DataFreshness,
   DataSource,
   IssuerDashboard,
   LiquidityHistoryResult,
+  MarketHealth,
   MarketOverview,
   MetricOrInsufficient,
   PriceHistoryResult,
@@ -89,7 +94,7 @@ export async function getDataFreshness(poolAddress: string | null): Promise<Data
 
   const lagSeconds = Math.round((Date.now() - cursor.lastIndexedAt.getTime()) / 1000);
   return {
-    status: lagSeconds > 300 ? "delayed" : "live",
+    status: lagSeconds > INDEXER_DELAYED_AFTER_SECONDS ? "delayed" : "live",
     lastIndexedAt: cursor.lastIndexedAt.toISOString(),
     lagSeconds,
   };
@@ -370,6 +375,84 @@ export async function getTopTraderVolumeShare(marketId: string, period: Analytic
   return Math.min(1, row.top_volume / row.total_volume);
 }
 
+interface WindowTotalsRow {
+  count: number;
+  volume_usd: number;
+  last_at: Date | null;
+}
+
+async function getTradeWindowTotals(marketId: string, since: Date): Promise<HealthTradeTotals> {
+  const rows = await prisma.$queryRaw<WindowTotalsRow[]>`
+    SELECT COUNT(*)::int AS count, COALESCE(SUM(token_amount * price_usd), 0)::float AS volume_usd, MAX(timestamp) AS last_at
+    FROM trades
+    WHERE market_id = ${marketId} AND timestamp >= ${since}
+  `;
+  const r = rows[0];
+  return { tradeCount: r?.count ?? 0, volumeUsd: r?.volume_usd ?? 0, lastTradeAt: r?.last_at ? r.last_at.toISOString() : null };
+}
+
+/**
+ * Market Health (Market Health & Anomaly Engine). Reads only what the
+ * indexer already wrote plus the overview the dashboard already fetched;
+ * every query is time-bounded and capped. The detection logic itself lives in
+ * `@elf/market-engine` (evaluateMarketHealth) — this function only gathers
+ * inputs. Read-only: no writes, no signing.
+ */
+export async function computeMarketHealth(
+  marketId: string,
+  overview: MarketOverview,
+  tradeCount24h: number,
+  topTraderVolumeShare24h: number | null,
+): Promise<MarketHealth> {
+  const now = new Date();
+  const t = HEALTH_THRESHOLDS;
+  const recentStart = new Date(now.getTime() - t.recentWindowHours * 3_600_000);
+  const baselineStart = new Date(now.getTime() - (t.recentWindowHours + t.baselineWindowHours) * 3_600_000);
+  const since24h = new Date(now.getTime() - 24 * 3_600_000);
+
+  const [opening, inWindow, sinceBaselineStart, sinceRecentStart, firstTrade, largest, graduationEvent] = await Promise.all([
+    prisma.liquidityHistory.findFirst({ where: { marketId, timestamp: { lt: recentStart } }, orderBy: { timestamp: "desc" } }),
+    prisma.liquidityHistory.findMany({ where: { marketId, timestamp: { gte: recentStart } }, orderBy: { timestamp: "asc" }, take: 500 }),
+    getTradeWindowTotals(marketId, baselineStart),
+    getTradeWindowTotals(marketId, recentStart),
+    prisma.trade.findFirst({ where: { marketId }, orderBy: { timestamp: "asc" }, select: { timestamp: true } }),
+    prisma.$queryRaw<{ signature: string; side: string; timestamp: Date; value_usd: number }[]>`
+      SELECT signature, side::text AS side, timestamp, (token_amount * price_usd)::float AS value_usd
+      FROM trades
+      WHERE market_id = ${marketId} AND timestamp >= ${since24h}
+      ORDER BY value_usd DESC
+      LIMIT 5
+    `,
+    prisma.graduationEvent.findFirst({ where: { marketId }, orderBy: { timestamp: "desc" }, select: { signature: true, timestamp: true } }),
+  ]);
+
+  return evaluateMarketHealth({
+    now: now.toISOString(),
+    indexer: { status: overview.freshness.status, lagSeconds: overview.freshness.lagSeconds },
+    liquidityReadings: [...(opening ? [opening] : []), ...inWindow].map((r) => ({ timestamp: r.timestamp.toISOString(), liquidityUsd: r.liquidityUsd })),
+    currentLiquidityUsd: overview.liquidityUsd.value,
+    trades: {
+      firstTradeAt: firstTrade?.timestamp.toISOString() ?? null,
+      sinceBaselineStart,
+      sinceRecentStart,
+      largest24h: largest.map((r) => ({ signature: r.signature, timestamp: r.timestamp.toISOString(), side: r.side === "sell" ? "sell" : "buy", valueUsd: r.value_usd })),
+      count24h: tradeCount24h,
+      topTraderVolumeShare24h,
+    },
+    price: {
+      dbcUsd: overview.priceUsd.value,
+      referenceUsd: overview.referencePriceUsd,
+      referenceSource: overview.referencePriceSource,
+      referenceFeedSymbol: overview.referencePriceFeedSymbol,
+    },
+    oracleFeeds: overview.priceOracle.map((f) => ({ priceUsd: f.priceUsd, unavailableReason: f.unavailableReason })),
+    graduation: {
+      percentComplete: overview.graduation.percentageComplete,
+      event: graduationEvent ? { timestamp: graduationEvent.timestamp.toISOString(), signature: graduationEvent.signature } : null,
+    },
+  });
+}
+
 /**
  * Issuer dashboard payload: the existing MarketOverview plus all-time trade
  * counts and the risk indicators derived from it. Reuses getMarketOverview
@@ -403,11 +486,14 @@ export async function getIssuerDashboard(marketId: string): Promise<IssuerDashbo
     largestTradeUsd: tradeStats24h.totalTrades > 0 ? tradeStats24h.largestTradeUsd : null,
   });
 
+  const health = await computeMarketHealth(marketId, overview, tradeStats24h.totalTrades, topShare);
+
   return {
     overview,
     totalTrades: tradeStatsAll.totalTrades,
     uniqueTradersAllTime: traderStatsAll.uniqueTraders,
     targetLiquidityUsd: launch.marketProfile.targetLiquidityUsd,
     indicators,
+    health,
   };
 }
