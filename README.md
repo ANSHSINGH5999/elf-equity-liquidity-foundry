@@ -23,9 +23,10 @@ page says exactly why it cannot).
 
 ## Demo video
 
-Recorded on the live deployment (https://web-rosy-six-kh0q1fz7se.vercel.app): sample issuer through all five
-Design steps (Asset → Profile → Configuration → Simulation → Deploy), Asset Discovery, a PreStocks asset into the
-wizard, and Live Markets. [Download the MP4](docs/demo/elf-working-demo.mp4).
+Recorded on the live deployment (https://web-rosy-six-kh0q1fz7se.vercel.app): the live PreStocks catalog, Anthropic
+PreStocks through all five Design steps (Asset → Profile → Configuration → Simulation → Deploy), Live Markets, and the
+Devnet ANDURIL market with its graduation monitor and ten confirmed on-chain trades.
+[Download the MP4](docs/demo/elf-working-demo.mp4).
 
 **Contents:** [Demo video](#demo-video) · [Proven on Devnet](#proven-on-solana-devnet) · [Screenshots](#screenshots) ·
 [Problem](#1-problem) · [Architecture](#4-architecture) · [Setup](#5-setup) ·
