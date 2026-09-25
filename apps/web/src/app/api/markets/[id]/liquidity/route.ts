@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { apiError, isPrismaConnectionError } from "@/lib/server/api-error";
+import { databaseUnavailable, apiError, isPrismaConnectionError } from "@/lib/server/api-error";
 import { getLiquidityHistory, resolveMarket } from "@/lib/server/marketAnalytics";
 import { parsePeriod } from "@/lib/server/period";
 
@@ -16,7 +16,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     return NextResponse.json(history);
   } catch (error) {
     if (isPrismaConnectionError(error)) {
-      return apiError("database_unavailable", "The ELF database is temporarily unavailable.", 503);
+      return databaseUnavailable(error);
     }
     return apiError("internal_error", "Failed to load liquidity history.", 500);
   }

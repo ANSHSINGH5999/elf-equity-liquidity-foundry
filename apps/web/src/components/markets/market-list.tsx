@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { apiFetch } from "@/lib/api-client";
+import { apiFetch, ApiError } from "@/lib/api-client";
 import { formatUsd, truncateAddress } from "@/lib/utils";
 import type { AssetDto, CurveConfigDto } from "@/lib/api-types";
 import type { MarketRegime, PoolStatus } from "@elf/shared";
@@ -50,14 +50,29 @@ function matchesFilter(entry: PoolEntry, filter: MarketFilterKey): boolean {
 
 export function MarketList() {
   const [pools, setPools] = useState<PoolEntry[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ code: string } | null>(null);
   const [filter, setFilter] = useState<MarketFilterKey>("all");
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
+    let cancelled = false;
     apiFetch<{ pools: PoolEntry[] }>("/api/pools")
-      .then((res) => setPools(res.pools))
-      .catch(() => setError("Unable to load live markets right now."));
-  }, []);
+      .then((res) => {
+        if (!cancelled) setPools(res.pools);
+      })
+      .catch((err) => {
+        if (!cancelled) setError({ code: err instanceof ApiError ? err.code : "network_error" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [attempt]);
+
+  function retry() {
+    setError(null);
+    setPools(null);
+    setAttempt((n) => n + 1);
+  }
 
   const filtered = useMemo(() => {
     if (!pools) return [];
@@ -101,7 +116,19 @@ export function MarketList() {
         ))}
       </div>
 
-      {error && <p className="mt-8 text-sm text-negative">{error}</p>}
+      {error && (
+        <div className="mt-8 flex flex-wrap items-center gap-3">
+          <p className="text-sm text-negative">Unable to load live markets right now.</p>
+          <button
+            type="button"
+            onClick={retry}
+            className="rounded-full border border-white/15 px-3 py-1 text-xs font-medium text-foreground transition-colors hover:border-white/30"
+          >
+            Retry
+          </button>
+          <span className="font-mono text-[11px] text-subtle-foreground">{error.code}</span>
+        </div>
+      )}
       {!pools && !error && (
         <div className="mt-12 flex items-center justify-center text-sm text-muted-foreground">
           Fetching live indexed markets from Solana Devnet…

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import type { AiMarketAnalysisResponse } from "@elf/shared";
-import { apiError, isPrismaConnectionError, logUnhandledRouteError } from "@/lib/server/api-error";
+import { databaseUnavailable, apiError, isPrismaConnectionError, logUnhandledRouteError } from "@/lib/server/api-error";
 import { AI_DATA_SOURCE, buildVerifiedSnapshot, explainSnapshotCached } from "@/lib/server/aiMarketAnalysis";
 import { isGroqConfigured } from "@/lib/server/groq";
 import { getIssuerDashboard, getTradeStats } from "@/lib/server/marketAnalytics";
@@ -72,7 +72,7 @@ export async function POST(request: Request) {
     };
     return NextResponse.json(body);
   } catch (error) {
-    if (isPrismaConnectionError(error)) return apiError("database_unavailable", "The ELF database is temporarily unavailable.", 503);
+    if (isPrismaConnectionError(error)) return databaseUnavailable(error);
     logUnhandledRouteError("POST /api/ai/market-analysis", error);
     return apiError("internal_error", "The AI analysis could not be produced.", 500);
   }

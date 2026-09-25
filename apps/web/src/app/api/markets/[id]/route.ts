@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { apiError, isPrismaConnectionError } from "@/lib/server/api-error";
+import { databaseUnavailable, apiError, isPrismaConnectionError } from "@/lib/server/api-error";
 import { getMarketOverview } from "@/lib/server/marketAnalytics";
 
 /**
@@ -19,7 +19,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json(overview);
   } catch (error) {
     if (isPrismaConnectionError(error)) {
-      return apiError("database_unavailable", "The ELF database is temporarily unavailable.", 503);
+      return databaseUnavailable(error);
     }
     return apiError("rpc_unavailable", "The Solana RPC endpoint is temporarily unavailable.", 503);
   }

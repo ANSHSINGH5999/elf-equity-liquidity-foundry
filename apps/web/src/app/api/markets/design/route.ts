@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma, Prisma } from "@elf/db";
 import { designMarketSchema } from "@elf/shared";
 import { compileCurveCandidates } from "@elf/market-engine";
-import { apiError, isPrismaConnectionError } from "@/lib/server/api-error";
+import { databaseUnavailable, apiError, isPrismaConnectionError } from "@/lib/server/api-error";
 import { assetRowToDomain, marketProfileRowToDomain } from "@/lib/server/mappers";
 import { checkRateLimit, clientKeyFromRequest } from "@/lib/server/rate-limit";
 
@@ -53,7 +53,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ marketProfile, curveConfigs });
   } catch (error) {
     if (isPrismaConnectionError(error)) {
-      return apiError("database_unavailable", "The ELF database is temporarily unavailable.", 503);
+      return databaseUnavailable(error);
     }
     return apiError("internal_error", "Failed to compile market configuration.", 500);
   }

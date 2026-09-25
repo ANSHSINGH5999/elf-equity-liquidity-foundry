@@ -4,7 +4,7 @@ import { launchPlanRequestSchema } from "@elf/shared";
 import { buildLaunchPlan, evaluateSimulation } from "@elf/market-engine";
 import { validateCandidateConfiguration } from "@elf/meteora-adapter";
 import { SCENARIO_DEFINITIONS } from "@elf/simulation-engine";
-import { apiError, isPrismaConnectionError, logUnhandledRouteError } from "@/lib/server/api-error";
+import { databaseUnavailable, apiError, isPrismaConnectionError, logUnhandledRouteError } from "@/lib/server/api-error";
 import { assetRowToDomain, curveConfigRowToDomain, marketProfileRowToDomain } from "@/lib/server/mappers";
 import { getPythPriceComparison } from "@/lib/server/pyth";
 import { checkRateLimit, clientKeyFromRequest } from "@/lib/server/rate-limit";
@@ -75,7 +75,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ plan });
   } catch (error) {
     if (isPrismaConnectionError(error)) {
-      return apiError("database_unavailable", "The ELF database is temporarily unavailable.", 503);
+      return databaseUnavailable(error);
     }
     logUnhandledRouteError("POST /api/markets/launch-plan", error);
     return apiError("internal_error", "The launch plan could not be assembled.", 500);

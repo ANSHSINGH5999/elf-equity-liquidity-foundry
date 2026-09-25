@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@elf/db";
-import { apiError, isPrismaConnectionError } from "@/lib/server/api-error";
+import { databaseUnavailable, apiError, isPrismaConnectionError } from "@/lib/server/api-error";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -11,7 +11,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ asset });
   } catch (error) {
     if (isPrismaConnectionError(error)) {
-      return apiError("database_unavailable", "The ELF database is temporarily unavailable.", 503);
+      return databaseUnavailable(error);
     }
     return apiError("internal_error", "Failed to load asset.", 500);
   }

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { markLaunchLive, prisma } from "@elf/db";
 import { getLivePoolState } from "@elf/meteora-adapter";
 import { parsePublicKeyOrThrow } from "@elf/solana";
-import { apiError, isPrismaConnectionError, logUnhandledRouteError, mapTransactionSafetyError } from "@/lib/server/api-error";
+import { databaseUnavailable, apiError, isPrismaConnectionError, logUnhandledRouteError, mapTransactionSafetyError } from "@/lib/server/api-error";
 import { getServerConnection, getServerRpcUrl } from "@/lib/server/rpc";
 import { assertExpectedNetwork } from "@/lib/server/transaction";
 import { checkRateLimit, clientKeyFromRequest } from "@/lib/server/rate-limit";
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
   } catch (error) {
     const mapped = mapTransactionSafetyError(error);
     if (mapped) return mapped;
-    if (isPrismaConnectionError(error)) return apiError("database_unavailable", "The ELF database is temporarily unavailable.", 503);
+    if (isPrismaConnectionError(error)) return databaseUnavailable(error);
     logUnhandledRouteError("POST /api/dbc/pool/confirm", error);
     return apiError("internal_error", "Failed to confirm the pool.", 500);
   }

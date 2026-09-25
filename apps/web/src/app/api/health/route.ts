@@ -14,6 +14,7 @@ import {
   type RpcFailure,
 } from "@elf/solana";
 import { getServerRpcUrl } from "@/lib/server/rpc";
+import { logUnhandledRouteError } from "@/lib/server/api-error";
 
 /**
  * Liveness/readiness check — verifies the two hard dependencies (DB, RPC) rather than just returning 200 unconditionally.
@@ -44,9 +45,15 @@ export async function GET(request?: Request) {
   const deep = request ? new URL(request.url).searchParams.get("deep") === "1" : false;
   const checks: Record<string, "ok" | "unavailable"> = { database: "ok", rpc: "ok" };
 
-  await prisma.$queryRaw`SELECT 1`.catch(() => {
+  const dbStartedAt = Date.now();
+  let dbErrorCode: string | undefined;
+  await prisma.$queryRaw`SELECT 1`.catch((error: unknown) => {
     checks.database = "unavailable";
+    // Prisma's P-codes (P1001 unreachable, P1000 auth, P1012 missing env) are safe to expose; the message is not.
+    dbErrorCode = (error as { errorCode?: string }).errorCode ?? (error instanceof Error ? error.name : "unknown");
+    logUnhandledRouteError("GET /api/health (database)", error);
   });
+  const dbLatencyMs = Date.now() - dbStartedAt;
 
   const rpcUrl = getServerRpcUrl();
   const cluster = resolveClusterFromRpcUrl(rpcUrl);
@@ -85,6 +92,9 @@ export async function GET(request?: Request) {
     {
       status: healthy ? "ok" : "degraded",
       checks,
+      db: checks.database === "ok" ? "ok" : "error",
+      latencyMs: dbLatencyMs,
+      ...(dbErrorCode && { errorCode: dbErrorCode }),
       // `cluster` lets the browser confirm it is configured for the same network as this server before signing.
       cluster,
       rpcConfigured: Boolean(process.env.SOLANA_RPC_URL),

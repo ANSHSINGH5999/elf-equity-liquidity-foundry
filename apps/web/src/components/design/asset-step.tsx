@@ -34,6 +34,7 @@ const SAMPLE_ASSET = {
 export function AssetStep({ onComplete, preselectedMint }: { onComplete: (asset: AssetDto) => void; preselectedMint?: string }) {
   const [tab, setTab] = useState(preselectedMint ? "prestocks" : "manual");
   const [submitting, setSubmitting] = useState(false);
+  const [pendingMint, setPendingMint] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [form, setForm] = useState({
@@ -65,7 +66,9 @@ export function AssetStep({ onComplete, preselectedMint }: { onComplete: (asset:
   }, [preStocksLoading]);
 
   async function createAsset(payload: Record<string, unknown>) {
+    if (submitting) return;
     setSubmitting(true);
+    setPendingMint(typeof payload.mintAddress === "string" ? payload.mintAddress : null);
     setError(null);
     try {
       const { asset } = await apiFetch<{ asset: AssetDto }>("/api/assets", {
@@ -77,6 +80,7 @@ export function AssetStep({ onComplete, preselectedMint }: { onComplete: (asset:
       setError(err instanceof ApiError ? err.message : "Failed to save this asset.");
     } finally {
       setSubmitting(false);
+      setPendingMint(null);
     }
   }
 
@@ -167,8 +171,6 @@ export function AssetStep({ onComplete, preselectedMint }: { onComplete: (asset:
                 />
               </div>
 
-              {error && <p className="sm:col-span-2 text-sm text-negative">{error}</p>}
-
               <div className="sm:col-span-2">
                 <Button type="submit" disabled={submitting}>
                   {submitting ? "Saving…" : "Continue"}
@@ -190,6 +192,7 @@ export function AssetStep({ onComplete, preselectedMint }: { onComplete: (asset:
                   <button
                     key={asset.mintAddress}
                     aria-current={asset.mintAddress === preselectedMint ? "true" : undefined}
+                    aria-busy={pendingMint === asset.mintAddress}
                     disabled={submitting}
                     onClick={() =>
                       createAsset({
@@ -210,13 +213,20 @@ export function AssetStep({ onComplete, preselectedMint }: { onComplete: (asset:
                       <Badge variant="accent">{asset.symbol}</Badge>
                     </div>
                     <p className="mt-1 font-tabular text-xs text-muted-foreground">{truncateAddress(asset.mintAddress)}</p>
-                    <p className="mt-2 font-tabular text-sm text-foreground">{formatUsd(asset.referencePriceUsd)}</p>
+                    <p className="mt-2 font-tabular text-sm text-foreground">
+                      {pendingMint === asset.mintAddress ? "Saving…" : formatUsd(asset.referencePriceUsd)}
+                    </p>
                   </button>
                 ))}
               </div>
             )}
           </TabsContent>
         </Tabs>
+        {error && (
+          <p role="alert" className="mt-4 text-sm text-negative">
+            {error} Please try again.
+          </p>
+        )}
       </CardContent>
     </Card>
   );

@@ -3,7 +3,7 @@ import { prisma, Prisma } from "@elf/db";
 import { simulateMarketSchema } from "@elf/shared";
 import { buildConfigParametersFromCandidate, QuotePriceUnavailableError, getQuoteUsdPrice } from "@elf/meteora-adapter";
 import { runSimulation } from "@elf/simulation-engine";
-import { apiError, isPrismaConnectionError } from "@/lib/server/api-error";
+import { databaseUnavailable, apiError, isPrismaConnectionError } from "@/lib/server/api-error";
 import { getServerConnection } from "@/lib/server/rpc";
 import { curveConfigRowToDomain, marketProfileRowToDomain } from "@/lib/server/mappers";
 import { checkRateLimit, clientKeyFromRequest } from "@/lib/server/rate-limit";
@@ -48,7 +48,7 @@ export async function POST(request: Request) {
       return apiError("provider_unavailable", error.message, 503);
     }
     if (isPrismaConnectionError(error)) {
-      return apiError("database_unavailable", "The ELF database is temporarily unavailable.", 503);
+      return databaseUnavailable(error);
     }
     return apiError("simulation_failed", "The simulation could not be completed.", 500);
   }

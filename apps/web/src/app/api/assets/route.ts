@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@elf/db";
 import { createAssetSchema } from "@elf/shared";
-import { apiError, isPrismaConnectionError } from "@/lib/server/api-error";
+import { databaseUnavailable, apiError, isPrismaConnectionError } from "@/lib/server/api-error";
 import { checkRateLimit, clientKeyFromRequest } from "@/lib/server/rate-limit";
 
 export async function GET(request: Request) {
@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ assets });
   } catch (error) {
     if (isPrismaConnectionError(error)) {
-      return apiError("database_unavailable", "The ELF database is temporarily unavailable.", 503);
+      return databaseUnavailable(error);
     }
     return apiError("internal_error", "Failed to load assets.", 500);
   }
@@ -38,7 +38,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ asset }, { status: 201 });
   } catch (error) {
     if (isPrismaConnectionError(error)) {
-      return apiError("database_unavailable", "The ELF database is temporarily unavailable.", 503);
+      return databaseUnavailable(error);
     }
     return apiError("internal_error", "Failed to create asset.", 500);
   }

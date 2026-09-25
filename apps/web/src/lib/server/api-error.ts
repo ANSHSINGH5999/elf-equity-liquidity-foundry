@@ -18,12 +18,27 @@ export type ApiErrorCode =
   | "forbidden"
   | "internal_error";
 
-/** Uniform, user-safe error envelope. Never leaks a raw stack trace to the client. */
-export function apiError(code: ApiErrorCode, message: string, status: number, details?: unknown) {
+/**
+ * Uniform, user-safe error envelope. Never leaks a raw stack trace to the client.
+ * `cause` is logged server-side only (name, message, Prisma `errorCode`) — never sent in the response.
+ */
+export function apiError(code: ApiErrorCode, message: string, status: number, details?: unknown, cause?: unknown) {
   const requestId = randomUUID();
   // Structured server-side log — no secrets, no PII beyond what the caller passed in `details`.
-  console.error(JSON.stringify({ requestId, code, message, status }));
+  console.error(JSON.stringify({ requestId, code, message, status, ...(cause !== undefined && { cause: describeCause(cause) }) }));
   return NextResponse.json({ error: { code, message, requestId, details } }, { status });
+}
+
+// Prisma messages can echo the datasource URL; mask credentials before logging.
+function describeCause(error: unknown) {
+  const redact = (text: string) => text.replace(/(\w+:\/\/)[^@\s/]+@/g, "$1***@");
+  if (!(error instanceof Error)) return { message: redact(String(error)) };
+  const errorCode = (error as Error & { errorCode?: string; code?: string }).errorCode ?? (error as Error & { code?: string }).code;
+  return { name: error.name, errorCode, message: redact(error.message) };
+}
+
+export function databaseUnavailable(cause: unknown) {
+  return apiError("database_unavailable", "The ELF database is temporarily unavailable.", 503, undefined, cause);
 }
 
 /**

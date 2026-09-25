@@ -5,7 +5,7 @@ import { prisma } from "@elf/db";
 import { dbcConfigRequestSchema } from "@elf/shared";
 import { buildCreateConfigTransaction, QuotePriceUnavailableError } from "@elf/meteora-adapter";
 import { parsePublicKeyOrThrow } from "@elf/solana";
-import { apiError, isPrismaConnectionError, logUnhandledRouteError, mapTransactionSafetyError } from "@/lib/server/api-error";
+import { databaseUnavailable, apiError, isPrismaConnectionError, logUnhandledRouteError, mapTransactionSafetyError } from "@/lib/server/api-error";
 import { getServerConnection, getServerRpcUrl } from "@/lib/server/rpc";
 import { curveConfigRowToDomain, marketProfileRowToDomain } from "@/lib/server/mappers";
 import { assertExpectedNetwork, prepareForWalletSignature } from "@/lib/server/transaction";
@@ -139,7 +139,7 @@ export async function POST(request: Request) {
       return apiError("provider_unavailable", error.message, 503);
     }
     if (isPrismaConnectionError(error)) {
-      return apiError("database_unavailable", "The ELF database is temporarily unavailable.", 503);
+      return databaseUnavailable(error);
     }
     if (error instanceof Error && error.message.includes("public key")) {
       return apiError("validation_error", error.message, 400);

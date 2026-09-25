@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { ExternalMarketContext, ExternalMarketResult } from "@elf/shared";
-import { apiError, isPrismaConnectionError, logUnhandledRouteError } from "@/lib/server/api-error";
+import { databaseUnavailable, apiError, isPrismaConnectionError, logUnhandledRouteError } from "@/lib/server/api-error";
 import { EXTERNAL_UNAVAILABLE_MESSAGE, QUOTE_TOKEN_COINCAP_ID, fetchCoinCapAsset, findCoinCapAssetExact, isValidCoinCapAssetId } from "@/lib/server/coincap";
 import { resolveMarket } from "@/lib/server/marketAnalytics";
 import { checkRateLimit, clientKeyFromRequest } from "@/lib/server/rate-limit";
@@ -58,7 +58,7 @@ export async function GET(request: Request) {
     };
     return NextResponse.json(context);
   } catch (error) {
-    if (isPrismaConnectionError(error)) return apiError("database_unavailable", "The ELF database is temporarily unavailable.", 503);
+    if (isPrismaConnectionError(error)) return databaseUnavailable(error);
     logUnhandledRouteError("GET /api/market/external", error);
     return apiError("internal_error", "External market data could not be loaded.", 500);
   }

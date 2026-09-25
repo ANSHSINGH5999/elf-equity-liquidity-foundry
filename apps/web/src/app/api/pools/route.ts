@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@elf/db";
-import { apiError, isPrismaConnectionError } from "@/lib/server/api-error";
+import { databaseUnavailable, apiError, isPrismaConnectionError } from "@/lib/server/api-error";
 import { getPoolAnalytics } from "@/lib/server/poolAnalytics";
 
 /**
@@ -48,7 +48,7 @@ export async function GET() {
     return NextResponse.json({ pools: withAnalytics });
   } catch (error) {
     if (isPrismaConnectionError(error)) {
-      return apiError("database_unavailable", "The ELF database is temporarily unavailable.", 503);
+      return databaseUnavailable(error);
     }
     return apiError("internal_error", "Failed to load markets.", 500);
   }

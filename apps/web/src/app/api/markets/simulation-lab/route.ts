@@ -5,7 +5,7 @@ import { simulationLabRequestSchema, type LabRunResult } from "@elf/shared";
 import { LAB_ASSUMPTIONS, LAB_NOT_MODELLED, LAB_SCENARIO_LABELS, evaluateLabRun } from "@elf/market-engine";
 import { buildConfigParametersFromCandidate, getQuoteUsdPrice, QuotePriceUnavailableError, validateCandidateConfiguration } from "@elf/meteora-adapter";
 import { LabParameterError, resolveLabScenario, runScenario, SCENARIO_DEFINITIONS, UnsupportedScenarioError } from "@elf/simulation-engine";
-import { apiError, isPrismaConnectionError, logUnhandledRouteError } from "@/lib/server/api-error";
+import { databaseUnavailable, apiError, isPrismaConnectionError, logUnhandledRouteError } from "@/lib/server/api-error";
 import { curveConfigRowToDomain, marketProfileRowToDomain } from "@/lib/server/mappers";
 import { checkRateLimit, clientKeyFromRequest } from "@/lib/server/rate-limit";
 import { getServerConnection } from "@/lib/server/rpc";
@@ -53,7 +53,7 @@ export async function GET(request: Request) {
       candidates: siblings.map(curveConfigRowToDomain).map((c) => ({ id: c.id, label: c.label, riskProfile: c.riskProfile, isRecommended: c.isRecommended })),
     });
   } catch (error) {
-    if (isPrismaConnectionError(error)) return apiError("database_unavailable", "The ELF database is temporarily unavailable.", 503);
+    if (isPrismaConnectionError(error)) return databaseUnavailable(error);
     logUnhandledRouteError("GET /api/markets/simulation-lab", error);
     return apiError("internal_error", "The Simulation Lab context could not be loaded.", 500);
   }
@@ -102,7 +102,7 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof UnsupportedScenarioError || error instanceof LabParameterError) return apiError("validation_error", error.message, 400);
     if (error instanceof QuotePriceUnavailableError) return apiError("provider_unavailable", error.message, 503);
-    if (isPrismaConnectionError(error)) return apiError("database_unavailable", "The ELF database is temporarily unavailable.", 503);
+    if (isPrismaConnectionError(error)) return databaseUnavailable(error);
     logUnhandledRouteError("POST /api/markets/simulation-lab", error);
     return apiError("simulation_failed", "The simulation could not be completed.", 500);
   }
