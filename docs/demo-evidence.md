@@ -8,14 +8,13 @@ phrase, private key, API key or keypair secret here.
 
 | Check | Result |
 |---|---|
-| `pnpm test` | 59 files / 1006 tests passing (the devnet integration test skips gracefully while the faucet is exhausted) |
+| `pnpm test` | 59 files / 1002 tests passing (the devnet integration test skips gracefully while the faucet is exhausted) |
 | `pnpm typecheck` | 10/10 packages clean |
 | `pnpm lint` | 0 errors (2 pre-existing unused-variable warnings in 3D files) |
 | `pnpm build` | passes; routes `/markets/[marketId]/analytics`, `/api/markets/[id]/risk`, `/api/markets/[id]/analyze` present |
 | Runtime smoke (dev server + local Postgres) | unknown market → 404 on risk/analyze/trades; invalid swap/quote input → 400; analyze rate limit returns 429 after 10/min |
 | Secret hygiene | Pyth key literal found in 0 client-bundle files and 0 tracked files; static scan of every API route + client component passes |
 | PreStocks | live catalog rendered at `/assets` from the provider API |
-| Tessera | provider API TLS-resets intermittently (re-verified 2026-09-18); left behind a feature flag and surfaced honestly |
 | Pyth | Hermes authenticates the configured key; it has **no entitlement** for `Equity.US.*`, `Crypto.*X/USD` (xStock) or `Crypto.*ON/USD` (Ondo) feeds (403 "Not entitled"). It does return live BTC/USD and SOL/USD, which are not used as stock proxies. UI shows `Restricted — Pyth entitlement required` |
 
 **Caveat (updated 2026-09-19):** live pools now exist (§2), so the market APIs were verified against real data. The market and analytics pages were not re-checked by eye after the last fixes because the browser extension disconnected mid-session.

@@ -21,9 +21,8 @@
           │ engine          │       │         │
           │ @elf/prestocks- │  ┌────▼───┐     │ @meteora-ag/dynamic-
           │ adapter         │  │Postgres│     │ bonding-curve-sdk
-          │ @elf/tessera-   │  └────────┘     │
-          │ adapter         │                 ▼
-          └─────────────────┘         ┌───────────────────┐
+          └─────────────────┘  └────────┘     ▼
+                                       ┌───────────────────┐
                                        │   Solana RPC       │
                                        │ (devnet/mainnet)   │
                                        └─────────┬──────────┘
@@ -45,7 +44,6 @@ packages/meteora-adapter   The ONLY package that imports
                            @meteora-ag/dynamic-bonding-curve-sdk directly
 packages/solana            Connection factory, well-known mints, pubkey validation
 packages/prestocks-adapter Live PreStocks API client + normalizer
-packages/tessera-adapter   Feature-flagged Tessera API client (see below)
 packages/db                Prisma client singleton + generated types
 packages/indexer            Polling-based blockchain indexer (ELF V1 Phase 4) —
                            decodes real DBC program events into Trade/

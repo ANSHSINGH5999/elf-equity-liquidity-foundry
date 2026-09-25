@@ -18,7 +18,7 @@ page says exactly why it cannot).
 > real BUYs and SELLs were signed in a browser wallet (the latest ones through the HTTP-polling confirmation path),
 > every one of them was read back from the chain and indexed, and the analytics, market-health and AI panels run on that indexed
 > data. Simulations are labelled *"Simulation — no blockchain transaction is executed."* and are never shown as
-> live data. Nothing here is mocked blockchain state. `pnpm test`: **59 files / 1006 tests passing**; typecheck,
+> live data. Nothing here is mocked blockchain state. `pnpm test`: **59 files / 1002 tests passing**; typecheck,
 > lint and production build are clean.
 
 ## Demo video
@@ -157,9 +157,8 @@ price oracle** built to compare the live on-chain price against the
 regulated equity feed, the xStock feed, and the Ondo feed — live numbers
 require a Pyth key entitled to those feeds; the key used in development is
 authenticated but not entitled, so the panel reports
-`Restricted — Pyth entitlement required` instead of showing a price. Also includes a
-feature-flagged, real-but-currently-unstable integration into
-**Tessera** — see [Known limitations](#13-known-limitations).
+`Restricted — Pyth entitlement required` instead of showing a price. PreStocks is the
+only pre-IPO token provider ELF integrates.
 
 Clawpump's agent-launch bounty was evaluated and deliberately not
 pursued: it requires launching a token on a separate third-party
@@ -216,7 +215,6 @@ packages/simulation-engine  Scenario simulation against real curve math
 packages/meteora-adapter    The only package touching the Meteora SDK
 packages/solana             Connection/pubkey/well-known-mint helpers
 packages/prestocks-adapter  Live PreStocks API integration
-packages/tessera-adapter    Feature-flagged Tessera integration
 packages/db                 Prisma client + generated types
 prisma/schema.prisma        Postgres schema
 tests/                      market-engine, simulation, integration suites
@@ -378,7 +376,6 @@ See [.env.example](.env.example) for the full, current list. Summary:
 | `NEXT_PUBLIC_SOLANA_RPC_URL` | browser | public endpoint, no secrets (it ships in the client bundle: use an origin-restricted key) |
 | `NEXT_PUBLIC_APP_URL` | both | used to build token metadata URIs |
 | `PRESTOCKS_API_URL` | server only | defaults to the live public PreStocks API |
-| `TESSERA_ENABLED` | server only | must be `"true"` to enable; disabled by default |
 | `PYTH_API_KEY` | server only | **required for live Price Oracle data.** Hermes's `/v2/updates/price/latest` requires a Bearer token as of the current API version (verified live — see Known limitations); without it, the panel renders its honest "not configured" state, never fake numbers |
 | `GROQ_API_KEY` | **server only** | enables `POST /api/ai/market-analysis`. Never `NEXT_PUBLIC_`; never sent to the browser. Empty = the route reports "not configured" |
 | `GROQ_MODEL` | server only | Groq model id for the AI analysis; defaults to `openai/gpt-oss-20b` (see console.groq.com/docs/models) |
@@ -386,7 +383,6 @@ See [.env.example](.env.example) for the full, current list. Summary:
 | `INDEXER_SECRET` | server only | Bearer token for `POST /api/indexer/run`. **Set it in every deployed environment**: when it is empty the route is open in local development only, and in production it fails closed (HTTP 500) |
 | `TRUSTED_PROXY_HOPS` | server only | number of trusted reverse-proxy hops for the rate limiter's client identity (`0` = trust no client header; Vercel: `1`) |
 | `PYTH_HERMES_URL` | server only | defaults to `https://hermes.pyth.network`; override only for testing |
-| `TESSERA_API_URL` | server only | defaults to the live Tessera API |
 
 ### RPC diagnostics
 
@@ -457,7 +453,7 @@ pnpm build        # next build (also the production build check)
 - **Pyth** (`tests/integration/pyth.test.ts`): every Hermes error
   classification, with `fetch` mocked inside the test only.
 
-Run everything: `pnpm test` (currently 59 files / 1006 tests). Real-Postgres
+Run everything: `pnpm test` (currently 59 files / 1002 tests). Real-Postgres
 tests need `docker compose up -d`; they skip gracefully if the database is
 unreachable.
 
@@ -523,12 +519,6 @@ read-only analytics.
 - **Holder distribution is sampled**, not a full census (top 20 accounts
   via `getTokenLargestAccounts`) — disclosed in the Market Quality Score
   tooltip.
-- **Tessera integration is feature-flagged off by default.** Re-verified
-  live during this pass: one plain request succeeded, then three
-  immediate follow-ups all hit a TLS connection reset — the same
-  instability first observed 2026-09-15. Still not force-enabled in the
-  demo path; the Asset Discovery page shows an honest "temporarily
-  unavailable" state for it instead.
 - **Live validation is done for the ANDURIL market.** A real Devnet pool, six BUYs, four SELLs and the indexer were verified against the chain (see [docs/demo-evidence.md](docs/demo-evidence.md) §2), and the market, analytics, health, AI and external-data pages were checked in a browser.
 - **The Price Oracle panel needs `PYTH_API_KEY`** to show live numbers.
   Hermes's feed-discovery endpoint (`/v2/price_feeds`) is open, but its
@@ -614,12 +604,12 @@ read-only analytics.
 - [x] On-chain price is checked against Pyth (equity, xStock, and Ondo
       feeds, discovered live and compared side by side)
 - [x] Live assets can be browsed before designing a market
-      (`/assets` — PreStocks live, Tessera with an honest fallback)
+      (`/assets` — live PreStocks catalog)
 - [x] Errors are handled (validation, RPC unavailable, provider
       unavailable, wallet rejection, insufficient funds, blockhash
       expiry, not-found)
 - [x] README is complete
-- [x] Tests pass (`pnpm test` — 59 files / 1006 tests; the devnet
+- [x] Tests pass (`pnpm test` — 59 files / 1002 tests; the devnet
       integration test passes or gracefully skips depending on faucet availability)
 - [x] Trading terminal: live quote, execution price, price impact,
       wallet balances, Quote → Sign → Submitted → Confirmed / Failed states

@@ -221,9 +221,6 @@ importers:
       '@elf/solana':
         specifier: workspace:*
         version: link:../../packages/solana
-      '@elf/tessera-adapter':
-        specifier: workspace:*
-        version: link:../../packages/tessera-adapter
       '@meteora-ag/dynamic-bonding-curve-sdk':
         specifier: 1.5.12
         version: 1.5.12(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.3)(utf-8-validate@6.0.6)
@@ -508,25 +505,6 @@ importers:
       tweetnacl:
         specifier: ^1.0.3
         version: 1.0.3
-    devDependencies:
-      '@types/node':
-        specifier: ^20
-        version: 20.19.43
-      typescript:
-        specifier: ^5.7.2
-        version: 5.9.3
-      vitest:
-        specifier: ^2.1.8
-        version: 2.1.9(@types/node@20.19.43)(lightningcss@1.32.0)(supports-color@8.1.1)(terser@5.51.2)
-
-  packages/tessera-adapter:
-    dependencies:
-      '@elf/shared':
-        specifier: workspace:*
-        version: link:../shared
-      zod:
-        specifier: ^3.24.1
-        version: 3.25.76
     devDependencies:
       '@types/node':
         specifier: ^20

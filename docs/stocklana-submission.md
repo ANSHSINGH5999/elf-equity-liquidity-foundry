@@ -41,7 +41,6 @@ See `docs/demo-evidence.md`. **Status: real Devnet run executed** — createConf
 - The market UI was verified against real Devnet pools through its APIs; the analytics pages still need a by-eye pass with the final build.
 - The compiled fee schedule's duration is passed to the SDK in slots for these slot-activated pools, so a nominal 24h schedule runs about 9.6 hours. It is not shown as hours anywhere in the UI; a decision on converting it is pending.
 - Pyth equity/xStock/Ondo feeds require an entitlement our key does not have; the oracle panel reports the restriction.
-- Tessera's public API is intermittently unreachable (TLS resets) and is feature-flagged off; it is not part of the demo path.
 - Clawpump was evaluated and not integrated (its launch API targets pump.fun and requires funded agent wallets — no documented Meteora pairing).
 - The Market analyst is rule-based; the separate AI Market Analysis panel uses Groq and needs `GROQ_API_KEY` (its qualitative wording is not machine-verified). External Market Data needs `COINCAP_API_KEY`; ELF's equity assets are not listed on CoinCap.
 - Live market cap is not shown (circulating supply is not read on-chain).

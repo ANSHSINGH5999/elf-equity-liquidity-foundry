@@ -19,7 +19,7 @@ running, Postgres up, indexer run once so history exists
 | Time | Screen | Say / show | Evidence produced |
 |---|---|---|---|
 | 0:00 | Landing | The problem: a tokenized pre-IPO asset can exist without a designed market; configuring a bonding curve means curve math, fee schedules and migration thresholds. | — |
-| 0:20 | `/assets` | Live PreStocks catalog, pulled from the provider API, not cached. Pick one asset. (Tessera tab shows an honest "temporarily unavailable" — mention it in one sentence only if asked.) | screenshot 01 |
+| 0:20 | `/assets` | Live PreStocks catalog, pulled from the provider API, not cached. Pick one asset. | screenshot 01 |
 | 0:40 | `/design` step 2 | Market profile: liquidity, volatility, risk profile, graduation target. | 02 |
 | 1:00 | step 3 | Curve compiler: three deterministic Meteora DBC candidates, scored, one recommended with a rationale. | 03 |
 | 1:20 | step 4 | Simulation: six scenarios × four trade sizes against real curve math, every number labelled SIMULATED. | 04 |
@@ -108,7 +108,7 @@ stage anomalies.
 - Don't say Pyth verifies the price unless a feed is actually live on screen.
 - Don't say "confirmed" before the strip says Confirmed.
 - Don't claim mainnet — this runs on devnet.
-- Don't mention Clawpump or Tessera as integrated.
+- Don't mention Clawpump as integrated.
 
 ## If something fails on camera
 

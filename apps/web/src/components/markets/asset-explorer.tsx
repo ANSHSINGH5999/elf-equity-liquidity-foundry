@@ -11,7 +11,7 @@ import { apiFetch, ApiError } from "@/lib/api-client";
 import { formatUsd, truncateAddress } from "@/lib/utils";
 import type { TokenizedAsset } from "@elf/shared";
 
-type ProviderTab = "prestocks" | "tessera";
+type ProviderTab = "prestocks";
 
 interface ProviderState {
   assets: TokenizedAsset[] | null;
@@ -20,22 +20,19 @@ interface ProviderState {
 
 const PROVIDER_LABEL: Record<ProviderTab, string> = {
   prestocks: "PreStocks",
-  tessera: "Tessera",
 };
 
 /**
  * A standalone, live-data discovery surface for tokenized pre-IPO assets —
  * distinct from the wizard's asset-selection step (which is optimized for
  * "pick one and move on"). This page is the showcase: browse the real
- * PreStocks catalog (and Tessera, when its notoriously flaky API is
- * cooperating — see docs/architecture.md) before ever starting a launch.
+ * PreStocks catalog before ever starting a launch.
  */
 export function AssetExplorer() {
   const [tab, setTab] = useState<ProviderTab>("prestocks");
   const [query, setQuery] = useState("");
   const [state, setState] = useState<Record<ProviderTab, ProviderState>>({
     prestocks: { assets: null, error: null },
-    tessera: { assets: null, error: null },
   });
 
   useEffect(() => {
@@ -65,7 +62,7 @@ export function AssetExplorer() {
       <FadeInSection>
         <h1 className="font-display text-3xl text-foreground">Asset discovery</h1>
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-          Live tokenized pre-IPO catalogs, pulled directly from each provider&rsquo;s public API — not a cached snapshot.
+          The live PreStocks pre-IPO catalog, pulled directly from the PreStocks public API — not a cached snapshot.
           Pick an asset to see it, then design its market.
         </p>
       </FadeInSection>
@@ -74,7 +71,6 @@ export function AssetExplorer() {
         <Tabs value={tab} onValueChange={(v) => setTab(v as ProviderTab)}>
           <TabsList>
             <TabsTrigger value="prestocks">PreStocks</TabsTrigger>
-            <TabsTrigger value="tessera">Tessera</TabsTrigger>
           </TabsList>
         </Tabs>
         <Input
@@ -87,16 +83,11 @@ export function AssetExplorer() {
 
       <div className="mt-6">
         <Tabs value={tab}>
-          {(["prestocks", "tessera"] as const).map((provider) => (
+          {(["prestocks"] as const).map((provider) => (
             <TabsContent key={provider} value={provider}>
               {state[provider].error && (
                 <div className="rounded-[var(--radius-sm)] border border-warning/30 bg-warning-muted p-4 text-sm text-warning">
                   {PROVIDER_LABEL[provider]} is temporarily unavailable: {state[provider].error}
-                  {provider === "tessera" && (
-                    <span className="mt-1 block text-xs text-muted-foreground">
-                      Documented, not hidden — see &ldquo;Known limitations&rdquo; in the README.
-                    </span>
-                  )}
                 </div>
               )}
               {state[provider].assets === null && !state[provider].error && (
@@ -121,7 +112,7 @@ export function AssetExplorer() {
                           </div>
                           <div className="flex items-center justify-between">
                             <span className="font-tabular text-lg text-foreground">{formatUsd(asset.referencePriceUsd)}</span>
-                            <Link href={provider === "prestocks" ? `/design?asset=${encodeURIComponent(asset.mintAddress)}` : "/design"} className="text-xs font-medium text-accent-strong hover:underline">
+                            <Link href={`/design?asset=${encodeURIComponent(asset.mintAddress)}`} className="text-xs font-medium text-accent-strong hover:underline">
                               Design a market →
                             </Link>
                           </div>

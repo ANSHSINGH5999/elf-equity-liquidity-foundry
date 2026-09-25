@@ -18,7 +18,6 @@
     "@elf/shared": "workspace:*",
     "@elf/simulation-engine": "workspace:*",
     "@elf/solana": "workspace:*",
-    "@elf/tessera-adapter": "workspace:*",
     "@meteora-ag/dynamic-bonding-curve-sdk": "1.5.12",
     "@react-three/drei": "^10.7.8",
     "@react-three/fiber": "^9.7.0",

@@ -118,10 +118,6 @@ the in-memory map does not coordinate across processes.
   (`.safeParse`) and malformed individual entries are dropped rather than
   failing the whole listing. A provider outage surfaces as
   `provider_unavailable` (503), never fabricated data.
-- `@elf/tessera-adapter` is disabled by default (`TESSERA_ENABLED` must
-  be explicitly set to `"true"`) after observed instability during
-  integration (a working response followed by repeated TLS failures
-  within the same minute). The core Meteora flow has no dependency on it.
 
 ## Idempotency (ELF V1 Phase 3)
 

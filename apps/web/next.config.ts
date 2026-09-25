@@ -9,7 +9,6 @@ const nextConfig: NextConfig = {
     "@elf/simulation-engine",
     "@elf/meteora-adapter",
     "@elf/prestocks-adapter",
-    "@elf/tessera-adapter",
     "@elf/db",
     "@elf/indexer",
   ],
