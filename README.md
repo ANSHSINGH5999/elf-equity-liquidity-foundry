@@ -27,8 +27,6 @@ Recorded on the live deployment (https://web-rosy-six-kh0q1fz7se.vercel.app): sa
 Design steps (Asset → Profile → Configuration → Simulation → Deploy), Asset Discovery, a PreStocks asset into the
 wizard, and Live Markets. [Download the MP4](docs/demo/elf-working-demo.mp4).
 
-![ELF working demo](docs/demo/elf-working-demo.gif)
-
 **Contents:** [Demo video](#demo-video) · [Proven on Devnet](#proven-on-solana-devnet) · [Screenshots](#screenshots) ·
 [Problem](#1-problem) · [Architecture](#4-architecture) · [Setup](#5-setup) ·
 [Environment](#6-environment-variables) · [Testing](#8-testing) · [Deployment](#9-deployment) ·
